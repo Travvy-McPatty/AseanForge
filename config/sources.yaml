@@ -40,5 +40,7 @@ specialist:
 
 regional_gov:
   - { name: "MAS (Singapore) News", url: "https://www.mas.gov.sg/news", category: "Official Data", max_depth: 1, limit: 10 }
-  - { name: "IMDA (Singapore) Press", url: "https://www.imda.gov.sg/news-and-events/press-releases", category: "Official Data", max_depth: 1, limit: 10 }
+  - { name: "IMDA (Singapore) Press", url: "https://www.imda.gov.sg/resources/press-releases-factsheets-and-speeches", category: "Official Data", max_depth: 1, limit: 10 }
+
+  - { name: "BOT (Thailand) News", url: "https://www.bot.or.th/en/news/", category: "Official Data", max_depth: 1, limit: 10 }
 

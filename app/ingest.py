@@ -116,7 +116,7 @@ def strip_html(html: str) -> str:
     return re.sub(r"\s+", " ", txt).strip()
 
 
-def discover_links(base_url: str, html: str, limit: int = 8) -> List[str]:
+def discover_links(base_url: str, html: str, limit: int = 12) -> List[str]:
     patt = re.compile(r'<a[^>]+href=["\']([^"\']+)["\']', re.I)
     raw = patt.findall(html)
     urls: List[str] = []
@@ -417,8 +417,8 @@ def main():
                 if ct.startswith("text"):
                     html = data.decode("utf-8", errors="ignore")
             links = discover_links(base, html, limit=8)
-            # process up to 5 links per source
-            for url in links[:5]:
+            # process up to 8 links per source
+            for url in links[:8]:
                 try:
                     process_article(oa, label, url, fc_app, since, args.cmd == "dry-run", rules, metrics)
                 except Exception as e:
