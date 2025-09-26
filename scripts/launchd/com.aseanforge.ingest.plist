@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.aseanforge.ingest</string>
+
+  <!-- Adjust paths if you moved the repo -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/travispaterson/Documents/augment-projects/AseanForge/venv/bin/python</string>
+    <string>/Users/travispaterson/Documents/augment-projects/AseanForge/scripts/ingest_sources.py</string>
+    <string>--limit-per-source</string>
+    <string>8</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/travispaterson/Documents/augment-projects/AseanForge</string>
+
+  <!-- Run daily at 06:30 local time -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>6</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/travispaterson/Documents/augment-projects/AseanForge/logs/launchd_ingest.out</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/travispaterson/Documents/augment-projects/AseanForge/logs/launchd_ingest.err</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+</dict>
+</plist>
+

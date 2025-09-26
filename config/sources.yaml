@@ -1,0 +1,44 @@
+# High-value sources for daily ingestion (initial MVP)
+# Fields: name, category, url, max_depth, limit
+# Note: Pages behind paywalls may return stubs; keep for link-tracking and public posts
+
+news_analysis:
+  - { name: "Financial Times (Asia)", url: "https://www.ft.com/stream/sectionsId/ZWY0NzFhNjItYmM4NC00OTljLThlNjYtYmU2MzU3NzhmNGZl-T21uaUd1SWR0ZW1z", category: "News & Analysis", max_depth: 1, limit: 10 }
+  - { name: "Reuters Business", url: "https://www.reuters.com/markets/asia/", category: "News & Analysis", max_depth: 1, limit: 15 }
+  - { name: "Bloomberg Technology Asia", url: "https://www.bloomberg.com/asia/technology", category: "News & Analysis", max_depth: 1, limit: 10 }
+  - { name: "Nikkei Asia Tech", url: "https://asia.nikkei.com/Business/Technology", category: "News & Analysis", max_depth: 1, limit: 10 }
+  - { name: "Tech in Asia", url: "https://www.techinasia.com/", category: "News & Analysis", max_depth: 1, limit: 15 }
+  - { name: "DealStreetAsia", url: "https://www.dealstreetasia.com/sections/technology/", category: "News & Analysis", max_depth: 1, limit: 10 }
+
+  - { name: "DealStreetAsia — SEA Startup Funding Report H1 2025", url: "https://www.dealstreetasia.com/reports/southeast-asia-startup-funding-report-h1-2025", category: "News & Analysis", max_depth: 1, limit: 6 }
+  - { name: "DealStreetAsia — Data Vantage: Sinbad–Tjufoo merger", url: "https://www.dealstreetasia.com/stories/data-vantage-sinbad-tjufoo-456272/", category: "News & Analysis", max_depth: 1, limit: 4 }
+  - { name: "DealStreetAsia — Temasek injects capital into GenZero", url: "https://www.dealstreetasia.com/stories/temaseks-capital-injection-into-genzero-456658/", category: "News & Analysis", max_depth: 1, limit: 4 }
+  - { name: "DealStreetAsia — SE Asia VC Funds Review H1 2025", url: "https://www.dealstreetasia.com/reports/se-asia-vc-funds-h1-2025-review", category: "News & Analysis", max_depth: 1, limit: 4 }
+  - { name: "TechEDT — SEA startup funding sinks to six-year low", url: "https://www.techedt.com/southeast-asia-startup-funding-sinks-to-six-year-low-as-investors-turn-selective", category: "News & Analysis", max_depth: 1, limit: 3 }
+
+think_tanks:
+  - { name: "CSIS", url: "https://www.csis.org/regions/asia", category: "Think Tank", max_depth: 1, limit: 10 }
+  - { name: "Brookings (Global China & Asia)", url: "https://www.brookings.edu/topic/china/", category: "Think Tank", max_depth: 1, limit: 10 }
+  - { name: "Carnegie Endowment (Asia)", url: "https://carnegieendowment.org/regions/asia", category: "Think Tank", max_depth: 1, limit: 10 }
+  - { name: "Chatham House (Asia-Pacific)", url: "https://www.chathamhouse.org/regions/asia-pacific", category: "Think Tank", max_depth: 1, limit: 10 }
+  - { name: "Peterson Institute (PIIE)", url: "https://www.piie.com/research", category: "Think Tank", max_depth: 1, limit: 8 }
+
+official_data:
+  - { name: "US Treasury (Press)", url: "https://home.treasury.gov/news/press-releases", category: "Official Data", max_depth: 1, limit: 10 }
+  - { name: "BIS (Publications)", url: "https://www.bis.org/list/publications.htm", category: "Official Data", max_depth: 1, limit: 10 }
+  - { name: "IMF (News)", url: "https://www.imf.org/en/News", category: "Official Data", max_depth: 1, limit: 12 }
+  - { name: "World Bank (East Asia & Pacific)", url: "https://www.worldbank.org/en/region/eap/publications", category: "Official Data", max_depth: 1, limit: 10 }
+
+  - { name: "ASEAN Secretariat (News)", url: "https://asean.org/news/", category: "Official Data", max_depth: 1, limit: 10 }
+
+specialist:
+  - { name: "Semianalysis", url: "https://www.semianalysis.com/archive", category: "Specialist", max_depth: 1, limit: 10 }
+  - { name: "The Ken (SEA)", url: "https://the-ken.com/sea/", category: "Specialist", max_depth: 1, limit: 8 }
+  - { name: "DealStreetAsia Medium — Data Vantage (Zenith Learning FY24, etc.)", url: "https://dealstreetasia.medium.com/data-vantage-zenith-learnings-fy24-financials-and-other-updates-cdf222914a81", category: "Specialist", max_depth: 1, limit: 3 }
+  - { name: "PolicyEdge — ASEAN Framework Agreement on Competition (AFAC)", url: "https://www.policyedge.in/p/asean-signs-framework-agreement-to", category: "Specialist", max_depth: 1, limit: 3 }
+
+
+regional_gov:
+  - { name: "MAS (Singapore) News", url: "https://www.mas.gov.sg/news", category: "Official Data", max_depth: 1, limit: 10 }
+  - { name: "IMDA (Singapore) Press", url: "https://www.imda.gov.sg/resources/press-releases-factsheets-and-speeches", category: "Official Data", max_depth: 1, limit: 10 }
+

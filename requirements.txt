@@ -1,0 +1,17 @@
+firecrawl-py==4.3.6
+langchain-postgres==0.0.15
+langchain-openai==0.3.33
+openai==1.108.2
+python-dotenv==1.1.1
+PyYAML==6.0.2
+
+matplotlib==3.10.6
+seaborn==0.13.2
+markdown==3.9
+weasyprint==66.0
+pytest==8.4.2
+pypdf==6.1.0
+SQLAlchemy==2.0.43
+reportlab==4.4.4
+
+

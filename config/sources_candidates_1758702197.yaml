@@ -1,0 +1,23 @@
+# Candidate curated sources derived from Deep Research run 1758702197
+# Fields: name, category, url, max_depth, limit
+# Note: This file is for manual review before merging into config/sources.yaml
+
+news_analysis:
+  - { name: "DealStreetAsia — SEA Startup Funding Report H1 2025", category: "News & Analysis", url: "https://www.dealstreetasia.com/reports/southeast-asia-startup-funding-report-h1-2025", max_depth: 1, limit: 6 }
+  - { name: "DealStreetAsia — Data Vantage: Sinbad–Tjufoo merger", category: "News & Analysis", url: "https://www.dealstreetasia.com/stories/data-vantage-sinbad-tjufoo-456272/", max_depth: 1, limit: 4 }
+  - { name: "DealStreetAsia — Temasek injects capital into GenZero", category: "News & Analysis", url: "https://www.dealstreetasia.com/stories/temaseks-capital-injection-into-genzero-456658/", max_depth: 1, limit: 4 }
+  - { name: "DealStreetAsia — SE Asia VC Funds Review H1 2025", category: "News & Analysis", url: "https://www.dealstreetasia.com/reports/se-asia-vc-funds-h1-2025-review", max_depth: 1, limit: 4 }
+  - { name: "TechEDT — SEA startup funding sinks to six-year low", category: "News & Analysis", url: "https://www.techedt.com/southeast-asia-startup-funding-sinks-to-six-year-low-as-investors-turn-selective", max_depth: 1, limit: 3 }
+
+specialist:
+  - { name: "DealStreetAsia Medium — Data Vantage (Zenith Learning FY24, etc.)", category: "Specialist", url: "https://dealstreetasia.medium.com/data-vantage-zenith-learnings-fy24-financials-and-other-updates-cdf222914a81", max_depth: 1, limit: 3 }
+  - { name: "PolicyEdge — ASEAN Framework Agreement on Competition (AFAC)", category: "Specialist", url: "https://www.policyedge.in/p/asean-signs-framework-agreement-to", max_depth: 1, limit: 3 }
+
+official_data:
+  - { name: "ASEAN Secretariat — A Historic Step Towards Fairer Markets", category: "Official Data", url: "https://asean.org/a-historic-step-towards-fairer-markets-across-asean/", max_depth: 1, limit: 5 }
+
+# Suggested defaults for this candidate set (ingestors may override per-item)
+_defaults:
+  max_depth: 1
+  limit: 5
+

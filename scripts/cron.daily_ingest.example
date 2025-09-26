@@ -1,0 +1,6 @@
+# Example crontab entry for daily ingestion at 06:30 local time
+# Make sure to set FIRECRAWL_API_KEY, OPENAI_API_KEY, and NEON_DATABASE_URL in your shell env
+# Or source them from the repo .env via python-dotenv inside the script itself.
+
+30 6 * * * cd /Users/travispaterson/Documents/augment-projects/AseanForge && ./venv/bin/python scripts/ingest_sources.py --limit-per-source 8 >> logs/cron_ingest.log 2>&1
+
