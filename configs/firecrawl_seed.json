@@ -1,0 +1,14 @@
+{
+  "crawlerOptions": {"maxConcurrency": 2, "delayMs": 1200, "maxDepth": 1, "allowSubdomains": true, "render": true},
+  "scrapeOptions": {"formats": ["text", "html", "markdown"], "onlyMainContent": true, "javascript": true, "pdf": {"enabled": true}},
+  "selectors": {
+    "MAS": ["article .article-content", ".article-content", "main", "article"],
+    "IMDA": [".rich-text", ".content", "article", "main"]
+  },
+  "denySelectors": ["header", "nav", "footer", ".breadcrumb", ".share", ".social", ".related", ".tags"],
+  "startUrls": [
+    {"url": "https://www.mas.gov.sg/news", "label": "MAS"},
+    {"url": "https://www.imda.gov.sg/resources/press-releases-factsheets-and-speeches", "label": "IMDA"}
+  ]
+}
+
