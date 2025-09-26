@@ -83,14 +83,29 @@ def load_rules() -> Dict:
 # ---------------- HTTP utils ----------------
 
 def http_get(url: str, timeout: int = 45) -> Tuple[bytes, str]:
-    req = urllib.request.Request(url, headers={
-        "User-Agent": "ASEANForgePolicyTape/1.0 (+https://aseanforge.com)",
-        "Accept": "text/html,application/pdf;q=0.9,*/*;q=0.8",
-    })
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        ct = resp.info().get_content_type()
-        data = resp.read()
-        return data, ct
+    # Minimal redirect handling (301/302/307/308) without new deps; cap at 5 hops
+    redirects = 0
+    cur = url
+    while redirects <= 5:
+        req = urllib.request.Request(cur, method="GET", headers={
+            "User-Agent": "ASEANForgePolicyTape/1.0 (+https://aseanforge.com)",
+            "Accept": "text/html,application/pdf;q=0.9,*/*;q=0.8",
+        })
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                ct = resp.info().get_content_type()
+                data = resp.read()
+                return data, ct
+        except urllib.error.HTTPError as e:
+            if e.code in (301, 302, 307, 308):
+                loc = e.headers.get("Location")
+                if not loc:
+                    raise
+                cur = urllib.parse.urljoin(cur, loc)
+                redirects += 1
+                continue
+            raise
+    raise urllib.error.HTTPError(cur, 310, "Too many redirects", hdrs=None, fp=None)
 
 
 def looks_like_pdf(url: str, content_type: str) -> bool:
@@ -116,7 +131,7 @@ def strip_html(html: str) -> str:
     return re.sub(r"\s+", " ", txt).strip()
 
 
-def discover_links(base_url: str, html: str, limit: int = 12) -> List[str]:
+def discover_links(base_url: str, html: str, limit: int = 8) -> List[str]:
     patt = re.compile(r'<a[^>]+href=["\']([^"\']+)["\']', re.I)
     raw = patt.findall(html)
     urls: List[str] = []
@@ -417,8 +432,8 @@ def main():
                 if ct.startswith("text"):
                     html = data.decode("utf-8", errors="ignore")
             links = discover_links(base, html, limit=8)
-            # process up to 8 links per source
-            for url in links[:8]:
+            # process up to 5 links per source
+            for url in links[:5]:
                 try:
                     process_article(oa, label, url, fc_app, since, args.cmd == "dry-run", rules, metrics)
                 except Exception as e:
