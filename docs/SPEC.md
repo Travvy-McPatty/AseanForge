@@ -8,6 +8,8 @@
 
 ### CLI
 - `.venv/bin/python app/ingest.py [dry-run|run] --since=YYYY-MM-DD`
+- Recommended env loading (no secret echo): `env $(grep -Ev '^#|^$' app/.env | xargs) .venv/bin/python app/ingest.py ...`
+- Logs/artifacts for validations should write under `data/output/validation/latest/`
 
 ### Limits
 - Max links discovered per source: 8
