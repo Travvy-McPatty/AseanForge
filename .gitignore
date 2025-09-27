@@ -10,3 +10,15 @@ venv/
 # Project outputs
 /data/output/
 .env
+
+# Ignore per-app env
+app/.env
+
+# Ignore per-app env
+app/.env
+
+# Ignore per-app env
+app/.env
+
+# Ignore per-app env
+app/.env

@@ -1,0 +1,27 @@
+{
+  "crawlerOptions": {"maxConcurrency": 2, "delayMs": 1200, "maxDepth": 1, "allowSubdomains": true, "render": true},
+  "scrapeOptions": {"formats": ["text", "html", "markdown"], "onlyMainContent": true, "javascript": true, "pdf": {"enabled": true}},
+  "selectors": {
+    "MAS": ["article .article-content", ".article-content", "main", "article"],
+    "IMDA": [".rich-text", ".content", "article", "main"]
+  },
+  "denySelectors": ["header", "nav", "footer", ".breadcrumb", ".share", ".social", ".related", ".tags"],
+  "startUrls": [
+    {"url": "https://www.mas.gov.sg/news", "label": "MAS"},
+    {"url": "https://www.imda.gov.sg/resources/press-releases-factsheets-and-speeches", "label": "IMDA"},
+    {"url": "https://asean.org/category/news/", "label": "ASEAN"},
+    {"url": "https://www.pdpc.gov.sg/News-and-Events", "label": "PDPC"},
+    {"url": "https://www.bi.go.id/id/publikasi/ruang-media/news-release/", "label": "BI"},
+    {"url": "https://www.ojk.go.id/id/berita-dan-kegiatan/siaran-pers", "label": "OJK"},
+    {"url": "https://kominfo.go.id/siaran-pers", "label": "KOMINFO"},
+    {"url": "https://www.bot.or.th/en/news-and-media/press-release", "label": "BOT"},
+    {"url": "https://www.bnm.gov.my/press-release", "label": "BNM"},
+    {"url": "https://www.sc.com.my/resources/media/media-release", "label": "SC"},
+    {"url": "https://www.mcmc.gov.my/media/media-releases", "label": "MCMC"},
+    {"url": "https://www.bsp.gov.ph/SitePages/Media%20and%20Research/MediaReleases.aspx", "label": "BSP"},
+    {"url": "https://dict.gov.ph/category/press-releases/", "label": "DICT"},
+    {"url": "https://english.mic.gov.vn/Pages/TinTuc/tintuckinhte.aspx", "label": "MIC"},
+    {"url": "https://www.sbv.gov.vn/webcenter/portal/en/home/sbv/news/press-release", "label": "SBV"}
+  ]
+}
+
