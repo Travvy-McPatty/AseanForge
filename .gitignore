@@ -22,3 +22,5 @@ app/.env
 
 # Ignore per-app env
 app/.env
+data/output/
+deliverables/
