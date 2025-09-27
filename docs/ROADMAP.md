@@ -56,3 +56,5 @@
 - events.csv rows: 51
 - documents.csv rows: 29
 - Zip: deliverables/policy_tape_snapshot_20250927T022206Z.zip
+
+- 20250927T023456Z — events.csv rows: 51; documents.csv rows: 29; Zip: deliverables/policy_tape_snapshot_20250927T023456Z.zip
