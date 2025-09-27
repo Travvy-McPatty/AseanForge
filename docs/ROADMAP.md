@@ -49,3 +49,10 @@
 - [ ] Export events.csv with columns: event_id, pub_date, country, authority, policy_area, action_type, title, url, source_tier, content_type, lang, is_ocr, ocr_quality, source_confidence, summary_en
 - [ ] Export documents.csv with columns: doc_id, event_id, source_url, rendered, char_count
 - [ ] Monthly snapshot ZIPs: deliverables/policy_tape_snapshot_YYYYmmddTHHMMSSZ.zip (CSV + SPEC.md + ROADMAP.md)
+
+
+### Latest snapshot
+- Timestamp: 2025-09-27T02:22:06Z
+- events.csv rows: 51
+- documents.csv rows: 29
+- Zip: deliverables/policy_tape_snapshot_20250927T022206Z.zip
