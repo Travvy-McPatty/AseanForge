@@ -18,10 +18,10 @@ ORDER BY pub_date DESC, event_id DESC;
 
 DOCS_SQL = """
 SELECT
-  doc_id, event_id, source_url, rendered,
+  document_id, event_id, source_url, rendered,
   LENGTH(clean_text) AS char_count
 FROM documents
-ORDER BY doc_id ASC;
+ORDER BY document_id ASC;
 """
 
 
@@ -51,7 +51,7 @@ def main():
             "source_confidence","summary_en"
         ])
         n_docs = export_csv(cur, DOCS_SQL, OUT_DOCS, [
-            "doc_id","event_id","source_url","rendered","char_count"
+            "document_id","event_id","source_url","rendered","char_count"
         ])
 
     # Write counts summary for validation
