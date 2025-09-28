@@ -326,20 +326,30 @@ def fc_fetch(app_obj, url: str) -> Optional[Dict]:
         return None
 
 def fc_fetch_with_params(app_obj, url: str, params: Dict) -> Tuple[Optional[Dict], Optional[str]]:
-    """Firecrawl fetch with explicit params; returns (page, error_note)."""
+    """Firecrawl fetch with explicit params; returns (page, error_note). Tries multiple SDK method names."""
     if not app_obj:
         return None, "no_firecrawl_app"
-    try:
-        result = app_obj.scrape_url(url, params=params)
-        page = {
-            "html": result.get("html") or "",
-            "text": result.get("text") or "",
-            "title": result.get("title") or "",
-        }
-        return page, None
-    except Exception as e:
-        note = f"exc={e.__class__.__name__}:{str(e)[:200]}"
-        return None, note
+    last_err: Optional[str] = None
+    for meth_name in ("scrape_url", "scrapeUrl", "scrape"):
+        try:
+            meth = getattr(app_obj, meth_name, None)
+            if not meth:
+                continue
+            try:
+                result = meth(url, params=params)
+            except TypeError:
+                # Some SDKs accept a single dict payload
+                result = meth({"url": url, **params})
+            page = {
+                "html": (result.get("html") if isinstance(result, dict) else "") or "",
+                "text": (result.get("text") if isinstance(result, dict) else "") or "",
+                "title": (result.get("title") if isinstance(result, dict) else "") or "",
+            }
+            if page["html"] or page["text"]:
+                return page, None
+        except Exception as e:
+            last_err = f"exc={e.__class__.__name__}:{str(e)[:200]}"
+    return None, last_err or "unknown_error"
 
 # ---------------- Processing ----------------
 
