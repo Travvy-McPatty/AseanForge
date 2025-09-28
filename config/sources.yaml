@@ -30,6 +30,8 @@ official_data:
   - { name: "World Bank (East Asia & Pacific)", url: "https://www.worldbank.org/en/region/eap/publications", category: "Official Data", max_depth: 1, limit: 10 }
 
   - { name: "ASEAN Secretariat (News)", url: "https://asean.org/category/news/", category: "Official Data", max_depth: 1, limit: 10 }
+  - { name: "ASEAN Secretariat (Announcements)", url: "https://asean.org/category/announcements/", category: "Official Data", max_depth: 1, limit: 8 }
+
 
 specialist:
   - { name: "Semianalysis", url: "https://www.semianalysis.com/archive", category: "Specialist", max_depth: 1, limit: 10 }
@@ -43,6 +45,8 @@ regional_gov:
   - { name: "MAS (Singapore) Speeches", url: "https://www.mas.gov.sg/news/speeches", category: "Official Data", max_depth: 1, limit: 10 }
 
   - { name: "IMDA (Singapore) Press", url: "https://www.imda.gov.sg/resources/press-releases-factsheets-and-speeches", category: "Official Data", max_depth: 1, limit: 10 }
+
+  - { name: "BOT (Thailand) Press", url: "https://www.bot.or.th/en/press/", category: "Official Data", max_depth: 1, limit: 8 }
 
   - { name: "BOT (Thailand) News", url: "https://www.bot.or.th/en/news-and-media/press-release", category: "Official Data", max_depth: 1, limit: 10 }
 

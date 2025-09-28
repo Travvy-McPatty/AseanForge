@@ -60,3 +60,4 @@
 - 20250927T023456Z — events.csv rows: 51; documents.csv rows: 29; Zip: deliverables/policy_tape_snapshot_20250927T023456Z.zip
 - 20250928T044533Z: events=50, documents=28, zip=deliverables/policy_tape_snapshot_20250928T044533Z.zip (Firecrawl-first)
 - 20250928T061759Z: events=50, documents=28, zip=deliverables/policy_tape_snapshot_20250928T061759Z.zip (Firecrawl-first + feeds cataloged)
+- 20250928T075201Z: events=72, documents=29, zip=deliverables/policy_tape_snapshot_20250928T075201Z.zip (Firecrawl-first unlock)
