@@ -30,3 +30,7 @@ Notes
 - Documented-only entries that are temporarily blocked remain included for link discovery; we only ingest pages returning HTTP 200.
 - No secrets in logs; use env $(grep -Ev '^#|^$' app/.env | xargs) pattern for runs.
 
+\n\n### Discovered Feeds (documented-only)
+
+Authority | URL | Type
+---|---|---
