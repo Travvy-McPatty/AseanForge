@@ -2,7 +2,7 @@
 
 ### Scope
 - Tier‑1 authority ingestion only (15 authorities)
-- Rendering via Firecrawl when available; otherwise direct urllib
+- Firecrawl-first with HTTP fallback; global render=true with selective render=false overrides (PDPC, SC, OJK, BI)
 - Storage: Neon Postgres (events, documents) with pgvector
 - No OCR/cloud features beyond OpenAI + Firecrawl
 
@@ -59,13 +59,13 @@ Authority | URL | render_required | selectors
 ASEAN | https://asean.org/category/news/ | true | -
 MAS | https://www.mas.gov.sg/news | true | article .article-content, .article-content
 IMDA | https://www.imda.gov.sg/resources/press-releases-factsheets-and-speeches | true | .rich-text, .content
-PDPC | https://www.pdpc.gov.sg/News-and-Events | true | -
-BI | https://www.bi.go.id/id/publikasi/ruang-media/news-release/ | true | -
-OJK | https://www.ojk.go.id/id/berita-dan-kegiatan/siaran-pers | true | -
+PDPC | https://www.pdpc.gov.sg/News-and-Events | false | -
+BI | https://www.bi.go.id/id/publikasi/ruang-media/news-release/ | false | -
+OJK | https://www.ojk.go.id/id/berita-dan-kegiatan/siaran-pers | false | -
 KOMINFO | https://kominfo.go.id/siaran-pers | true | -
 BOT | https://www.bot.or.th/en/news-and-media/press-release | true | -
 BNM | https://www.bnm.gov.my/press-release | true | -
-SC | https://www.sc.com.my/resources/media/media-release | true | -
+SC | https://www.sc.com.my/resources/media/media-release | false | -
 MCMC | https://www.mcmc.gov.my/media/media-releases | true | -
 BSP | https://www.bsp.gov.ph/SitePages/Media%20and%20Research/MediaReleases.aspx | true | -
 DICT | https://dict.gov.ph/category/press-releases/ | true | -
