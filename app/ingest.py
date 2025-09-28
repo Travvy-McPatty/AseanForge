@@ -274,7 +274,10 @@ def process_article(oa: OpenAI, authority: str, url: str, fc_app, since_date: dt
     page = fc_fetch(fc_app, url)
     if page:
         html_page = page.get("html", ""); text = page.get("text", ""); title = page.get("title", "")
+        logging.info(f"FETCH_PROVIDER=firecrawl url={url}")
+
     if not text:
+        logging.info(f"FETCH_PROVIDER=http url={url}")
         data, ctype = http_get(url)
         if looks_like_pdf(url, ctype):
             content_type = "pdf"
@@ -427,7 +430,11 @@ def main():
         try:
             landing = fc_fetch(fc_app, base) if fc_app else None
             html = landing.get("html") if landing else ""
+            if landing and html:
+                logging.info(f"FETCH_PROVIDER=firecrawl url={base}")
+
             if not html:
+                logging.info(f"FETCH_PROVIDER=http url={base}")
                 data, ct = http_get(base)
                 if ct.startswith("text"):
                     html = data.decode("utf-8", errors="ignore")
