@@ -80,6 +80,60 @@ def load_rules() -> Dict:
     with open(p, "r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
 
+
+# ---------------- Feeds override ----------------
+
+def load_feeds_override() -> Dict[str, Dict]:
+    p = os.path.join(os.path.dirname(__file__), "..", "configs", "feeds_override.json")
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            # support list of entries or dict
+            result = {}
+            if isinstance(data, list):
+                for e in data:
+                    if isinstance(e, dict) and e.get("authority") and e.get("feed") and e.get("enabled"):
+                        result[e["authority"]] = e
+            elif isinstance(data, dict):
+                for k, v in data.items():
+                    if isinstance(v, dict) and v.get("feed") and v.get("enabled"):
+                        result[k] = {"authority": k, **v}
+            return result
+    except Exception:
+        return {}
+
+
+def harvest_feed_urls(authority: str, feed_url: str, limit: int = 5) -> List[str]:
+    try:
+        data, ctype = http_get(feed_url)
+        text = data.decode("utf-8", errors="ignore") if data else ""
+        urls: List[str] = []
+        if "wp-json/wp/v2/posts" in feed_url and text.strip().startswith("["):
+            try:
+                arr = json.loads(text)
+                for it in arr:
+                    u = it.get("link") or it.get("url")
+                    if u:
+                        urls.append(u)
+            except Exception:
+                pass
+        elif "xml" in (ctype or "") or "<rss" in text or "<feed" in text:
+            for m in re.finditer(r"<item[\s\S]*?<link>(.*?)</link>[\s\S]*?</item>", text, re.I):
+                urls.append(m.group(1).strip())
+            if not urls:
+                for m in re.finditer(r"<entry[\s\S]*?<link[^>]*href=\"([^\"]+)\"[\s\S]*?</entry>", text, re.I):
+                    urls.append(m.group(1).strip())
+        # de-dup and cap
+        seen = set(); out = []
+        for u in urls:
+            if u and u not in seen:
+                seen.add(u); out.append(u)
+            if len(out) >= limit:
+                break
+        return out
+    except Exception:
+        return []
+
 # ---------------- HTTP utils ----------------
 
 def http_get(url: str, timeout: int = 45) -> Tuple[bytes, str]:
@@ -275,9 +329,13 @@ def process_article(oa: OpenAI, authority: str, url: str, fc_app, since_date: dt
     if page:
         html_page = page.get("html", ""); text = page.get("text", ""); title = page.get("title", "")
         logging.info(f"FETCH_PROVIDER=firecrawl url={url}")
+        if metrics is not None:
+            metrics["prov_fc_article"] = metrics.get("prov_fc_article", 0) + 1
 
     if not text:
         logging.info(f"FETCH_PROVIDER=http url={url}")
+        if metrics is not None:
+            metrics["prov_http_article"] = metrics.get("prov_http_article", 0) + 1
         data, ctype = http_get(url)
         if looks_like_pdf(url, ctype):
             content_type = "pdf"
@@ -422,19 +480,49 @@ def main():
         except Exception:
             logging.warning("Firecrawl init failed; falling back to urllib")
 
-    metrics = {"items_fetched": 0, "items_new": 0, "parse_failures": 0, "start": time.time()}
+    # provider counters
+    metrics = {
+        "items_fetched": 0,
+        "items_new": 0,
+        "parse_failures": 0,
+        "prov_fc_landing": 0,
+        "prov_http_landing": 0,
+        "prov_fc_article": 0,
+        "prov_http_article": 0,
+        "start": time.time(),
+    }
+
+    feeds_override = load_feeds_override()
 
     for entry in start_urls:
         base = entry.get("url"); label = entry.get("label")
         if not base: continue
         try:
+            # Feed-first for enabled authorities
+            used_feed = False
+            fo = feeds_override.get(label) if label else None
+            if fo and fo.get("enabled") and fo.get("feed"):
+                urls = harvest_feed_urls(label, fo["feed"], limit=5)
+                if urls:
+                    for url in urls[:5]:
+                        try:
+                            process_article(oa, label, url, fc_app, since, args.cmd == "dry-run", rules, metrics)
+                        except Exception as e:
+                            metrics["parse_failures"] += 1
+                            logging.exception("Failed %s: %s", url, e)
+                    used_feed = True
+            if used_feed:
+                continue
+
             landing = fc_fetch(fc_app, base) if fc_app else None
             html = landing.get("html") if landing else ""
             if landing and html:
                 logging.info(f"FETCH_PROVIDER=firecrawl url={base}")
+                metrics["prov_fc_landing"] += 1
 
             if not html:
                 logging.info(f"FETCH_PROVIDER=http url={base}")
+                metrics["prov_http_landing"] += 1
                 data, ct = http_get(base)
                 if ct.startswith("text"):
                     html = data.decode("utf-8", errors="ignore")
@@ -450,7 +538,14 @@ def main():
             logging.warning("Source scan failed %s: %s", label, e)
 
     duration_ms = int((time.time() - metrics["start"]) * 1000)
-    out = {"metrics": {k: v for k, v in metrics.items() if k != "start"}, "duration_ms": duration_ms}
+    out = {
+        "metrics": {k: v for k, v in metrics.items() if k != "start"},
+        "provider_summary": {
+            "landing": {"firecrawl": metrics["prov_fc_landing"], "http": metrics["prov_http_landing"]},
+            "articles": {"firecrawl": metrics["prov_fc_article"], "http": metrics["prov_http_article"]},
+        },
+        "duration_ms": duration_ms,
+    }
     logging.info(json.dumps(out))
     sys.exit(0)
 
