@@ -1,4 +1,12 @@
 {
+  "proxy": "auto",
+  "pageOptions": {
+    "waitFor": 2000,
+    "timeout": 60000,
+    "includeHtml": true,
+    "parsePDF": true
+  },
+
   "crawlerOptions": {
     "maxConcurrency": 2,
     "delayMs": 1200,
@@ -15,6 +23,13 @@
     "javascript": true,
     "pdf": {"enabled": true, "parsePDF": true},
     "ocr_fallback": true
+  },
+  "authorityOverrides": {
+    "ASEAN": {"proxy": "stealth", "pageOptions": {"waitFor": 5000}},
+    "OJK": {"proxy": "stealth", "pageOptions": {"waitFor": 5000}},
+    "IMDA": {"proxy": "auto"},
+    "MAS": {"proxy": "auto"},
+    "BI": {"proxy": "auto"}
   },
   "aggressiveAuthorities": {
     "IMDA": {"stealthProxy": true, "timeout": 60000},

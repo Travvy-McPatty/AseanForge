@@ -1,4 +1,7 @@
 import os, argparse, json, hashlib, time
+import re
+from urllib.request import urlopen, Request
+
 from urllib.parse import urlparse
 from datetime import datetime
 from dotenv import load_dotenv
@@ -6,6 +9,8 @@ from firecrawl import Firecrawl
 from langchain_postgres import PGVector
 from langchain_openai import OpenAIEmbeddings
 from sqlalchemy.exc import SQLAlchemyError
+import csv
+
 
 try:
     from usage_tracker import TokenTracker
@@ -42,6 +47,56 @@ SEED_URLS = [
 ]
 
 CACHE_PATH = "data/ingest_cache.json"
+WAIT_MS_DEFAULT = int(os.getenv("FIRECRAWL_WAIT_MS", "2000"))
+CRAWL_DELAY_MS = int(os.getenv("CRAWL_DELAY_MS", "1200"))
+
+
+
+def resolve_proxy_wait_by_url(url: str) -> tuple[str, int]:
+    dom = urlparse(url).netloc.lower() if url else ""
+    if any(k in dom for k in ("asean.org", "ojk.go.id")):
+        return ("stealth", 5000)
+    return ("auto", WAIT_MS_DEFAULT)
+
+
+
+def write_provider_event(authority: str, url: str, mode: str, provider: str, status: str) -> None:
+    try:
+        out_dir = os.path.join("data", "output", "validation", "latest")
+        os.makedirs(out_dir, exist_ok=True)
+        path = os.path.join(out_dir, "provider_events.csv")
+        exists = os.path.exists(path)
+        with open(path, "a", encoding="utf-8", newline="") as f:
+            w = csv.writer(f)
+            if not exists:
+                w.writerow(["authority", "url", "mode", "provider", "status", "ts"])
+            # derive authority heuristically by domain
+            dom = urlparse(url).netloc.lower() if url else ""
+            auth = "ASEAN" if "asean.org" in dom else (
+                "MAS" if "mas.gov.sg" in dom else (
+                "IMDA" if "imda.gov.sg" in dom else (
+                "OJK" if "ojk.go.id" in dom else (
+                "BI" if "bi.go.id" in dom else ""
+            ))))
+            w.writerow([authority or auth, url, mode, provider, status, datetime.utcnow().isoformat()])
+    except Exception:
+        pass
+
+
+def http_fetch_markdown(url: str, timeout: int = 20) -> tuple[str, dict]:
+    try:
+        req = Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; AseanForge/1.0)"})
+        with urlopen(req, timeout=timeout) as resp:
+            data = resp.read()
+        text = data.decode("utf-8", errors="ignore")
+        stripped = re.sub(r"<script[\s\S]*?</script>", " ", text, flags=re.I)
+        stripped = re.sub(r"<style[\s\S]*?</style>", " ", stripped, flags=re.I)
+        stripped = re.sub(r"<[^>]+>", " ", stripped)
+        stripped = re.sub(r"\s+", " ", stripped).strip()
+        return stripped, {"provider": "http"}
+    except Exception:
+        return "", {}
+
 MIN_PAGE_CHARS = int(os.getenv("MIN_PAGE_CHARS", "300"))
 
 def load_cache():
@@ -97,6 +152,9 @@ def main(limit: int, refresh: bool, track_metadata: bool = True):
     cache = load_cache()
     urls = SEED_URLS[:limit] if limit else SEED_URLS
 
+    # Provider usage metrics
+    metrics = {"fc_scrape": 0, "http_fallback": 0, "cache_hits": 0, "by_domain": {}}
+
     for url in urls:
         try:
             cached = cache.get(url) or {}
@@ -107,14 +165,63 @@ def main(limit: int, refresh: bool, track_metadata: bool = True):
                 title = cached.get("title", "")
                 content_hash = cached.get("hash")
                 from_cache = True
+                metrics["cache_hits"] = metrics.get("cache_hits", 0) + 1
             else:
-                doc = fc.scrape(url, formats=["markdown"])  # network call
+                # Firecrawl v2 preferred; fall back to legacy signature if needed
+                proxy_mode, wait_ms = resolve_proxy_wait_by_url(url)
+                try:
+                    doc = fc.scrape(url=url, formats=["markdown", "html"], pageOptions={
+                        "waitFor": wait_ms,
+                        "timeout": 60000,
+                        "includeHtml": True,
+                    }, parsers=["pdf"], proxy=proxy_mode)
+                except TypeError as te:
+                    if "pageOptions" in str(te) or "proxy" in str(te) or "parsers" in str(te):
+                        doc = fc.scrape(url, formats=["markdown", "html"])  # legacy
+                    else:
+                        raise
                 data = getattr(doc, "data", {}) or {}
                 md = getattr(doc, "markdown", "") or (data.get("markdown", "") if isinstance(data, dict) else "")
                 meta_raw = (data.get("metadata") if isinstance(data, dict) else {}) or {}
                 title = meta_raw.get("title", "")
                 content_hash = sha256_text(md) if md else None
                 from_cache = False
+                if md:
+                    # provider logging
+                    try:
+                        dom = urlparse(url).netloc
+                        slot = metrics.setdefault("by_domain", {}).setdefault(dom, {"fc_scrape": 0, "http_fallback": 0, "cache_hits": 0})
+                        slot["fc_scrape"] += 1
+                        metrics["fc_scrape"] = metrics.get("fc_scrape", 0) + 1
+                    except Exception:
+                        pass
+                    print(f"FETCH_PROVIDER=firecrawl mode=scrape url={url}")
+                    try:
+                        write_provider_event("", url, "scrape", "firecrawl", "success")
+                    except Exception:
+                        pass
+                else:
+                    # HTTP fallback if Firecrawl empty
+                    md_http, _ = http_fetch_markdown(url)
+                    if md_http:
+                        md = md_http
+                        content_hash = sha256_text(md)
+                        try:
+                            dom = urlparse(url).netloc
+                            slot = metrics.setdefault("by_domain", {}).setdefault(dom, {"fc_scrape": 0, "http_fallback": 0, "cache_hits": 0})
+                            slot["http_fallback"] += 1
+                            metrics["http_fallback"] = metrics.get("http_fallback", 0) + 1
+                        except Exception:
+                            pass
+                        print(f"FETCH_PROVIDER=http mode=scrape url={url}")
+                        try:
+                            write_provider_event("", url, "scrape", "http", "fallback")
+                        except Exception:
+                            pass
+                try:
+                    time.sleep(CRAWL_DELAY_MS / 1000.0)
+                except Exception:
+                    pass
 
             if not md or len(md) < MIN_PAGE_CHARS:
                 print(f"Skip (empty/short): {url} chars={len(md) if md else 0}")
@@ -206,6 +313,21 @@ def main(limit: int, refresh: bool, track_metadata: bool = True):
     print(summary_msg)
     print(tracker.json_line())
 
+    # Write provider usage CSV snapshot
+    try:
+        out_dir = os.path.join("data", "output", "validation", "latest")
+        os.makedirs(out_dir, exist_ok=True)
+        csv_path = os.path.join(out_dir, "scrape_provider_usage.csv")
+        with open(csv_path, "w", encoding="utf-8", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["domain", "fc_scrape", "http_fallback", "cache_hits_total"])
+            for dom, row in sorted(metrics.get("by_domain", {}).items()):
+                w.writerow([dom, row.get("fc_scrape", 0), row.get("http_fallback", 0), metrics.get("cache_hits", 0)])
+        print(f"Wrote provider usage CSV: {csv_path}")
+    except Exception as se:
+        print(f"[warn] provider usage CSV write failed: {se}")
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=0, help="Limit number of seed URLs")
@@ -216,5 +338,6 @@ if __name__ == "__main__":
                     help="Disable DB metadata persistence")
     args = ap.parse_args()
     main(limit=args.limit, refresh=args.refresh, track_metadata=args.track_metadata)
+
 
 

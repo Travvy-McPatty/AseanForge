@@ -40,9 +40,9 @@ except Exception:
 
 # Firecrawl (optional)
 try:
-    from firecrawl import FirecrawlApp  # type: ignore
+    from firecrawl import Firecrawl  # type: ignore
 except Exception:
-    FirecrawlApp = None  # type: ignore
+    Firecrawl = None  # type: ignore
 
 # PDF text extraction (correct import; no fallbacks)
 from pdfminer.high_level import extract_text  # type: ignore
@@ -305,44 +305,73 @@ def parse_published_at(html: str) -> Optional[dt.datetime]:
 
 # ---------------- Firecrawl ----------------
 
+# v2 helper: Firecrawl-first scrape with robust param shapes and polite delay
 def fc_fetch(app_obj, url: str) -> Optional[Dict]:
     if not app_obj:
         return None
-    try:
-        result = app_obj.scrape_url(url, params={
-            "formats": ["text", "html", "markdown"],
-            "javascript": True,
-            "onlyMainContent": True,
-            "pdf": {"enabled": True},
-            "waitUntil": "networkidle",
-            "timeout": 60000,
-        })
-        return {
-            "html": result.get("html") or "",
-            "text": result.get("text") or "",
-            "title": result.get("title") or "",
-        }
-    except Exception:
-        return None
+    wait_for = os.getenv("FIRECRAWL_WAIT_FOR", ".article, .press, main, article")
+    delay_ms = int(os.getenv("CRAWL_DELAY_MS", "1200"))
+    page_opts = {
+        "onlyMainContent": True,
+        "waitFor": wait_for,
+        "timeout": 60000,
+        "includeHtml": True,
+        "parsePDF": True,
+    }
+    # Try common v2 call signatures
+    try_order = [
+        ("kw", {"url": url, "formats": ["text", "html", "markdown"], "pageOptions": page_opts}),
+        ("dict", {"url": url, "formats": ["text", "html", "markdown"], "pageOptions": page_opts}),
+    ]
+    for mode, payload in try_order:
+        try:
+            if mode == "kw":
+                doc = app_obj.scrape(url=url, formats=payload["formats"], pageOptions=payload["pageOptions"])  # type: ignore
+            else:
+                doc = app_obj.scrape(payload)  # type: ignore[arg-type]
+            data = getattr(doc, "data", {}) or {}
+            html = getattr(doc, "html", "") or (data.get("html", "") if isinstance(data, dict) else "")
+            text = getattr(doc, "text", "") or (data.get("text", "") if isinstance(data, dict) else "")
+            md = getattr(doc, "markdown", "") or (data.get("markdown", "") if isinstance(data, dict) else "")
+            if not text and md:
+                text = md
+            meta = (data.get("metadata") if isinstance(data, dict) else {}) or {}
+            title = meta.get("title", "")
+            # polite delay
+            if delay_ms > 0:
+                time.sleep(delay_ms / 1000.0)
+            if html or text:
+                return {"html": html, "text": text, "title": title}
+        except Exception:
+            continue
+    return None
 
+# Legacy flexible helper retained for probe mode; per-request stealthProxy is not supported in v2
+# and is kept here only as a no-op in practice.
 def fc_fetch_with_params(app_obj, url: str, params: Dict) -> Tuple[Optional[Dict], Optional[str]]:
-    """Firecrawl fetch with explicit params; returns (page, error_note). Tries multiple SDK method names."""
     if not app_obj:
         return None, "no_firecrawl_app"
     last_err: Optional[str] = None
-    for meth_name in ("scrape_url", "scrapeUrl", "scrape"):
+    for meth_name in ("scrape", "scrape_url", "scrapeUrl"):
         try:
             meth = getattr(app_obj, meth_name, None)
             if not meth:
                 continue
             try:
-                result = meth(url, params=params)
+                # Prefer v2: pass url kw with pageOptions if present
+                page_opts = params.get("pageOptions") or {
+                    "onlyMainContent": params.get("onlyMainContent", True),
+                    "waitFor": params.get("waitFor") or ".article, .press, main, article",
+                    "timeout": params.get("timeout", 60000),
+                    "includeHtml": True,
+                    "parsePDF": True,
+                }
+                result = meth(url=url, formats=params.get("formats") or ["text", "html", "markdown"], pageOptions=page_opts)  # type: ignore
             except TypeError:
-                # Some SDKs accept a single dict payload
                 result = meth({"url": url, **params})
             page = {
                 "html": (result.get("html") if isinstance(result, dict) else "") or "",
-                "text": (result.get("text") if isinstance(result, dict) else "") or "",
+                "text": (result.get("text") if isinstance(result, dict) else "") or (result.get("markdown") if isinstance(result, dict) else "") or "",
                 "title": (result.get("title") if isinstance(result, dict) else "") or "",
             }
             if page["html"] or page["text"]:
@@ -350,6 +379,47 @@ def fc_fetch_with_params(app_obj, url: str, params: Dict) -> Tuple[Optional[Dict
         except Exception as e:
             last_err = f"exc={e.__class__.__name__}:{str(e)[:200]}"
     return None, last_err or "unknown_error"
+
+# v2 helper: crawl landing and extract candidate URLs (shallow)
+def fc_crawl_links(app_obj, base_url: str, limit: int = 8, max_depth: int = 1) -> List[str]:
+    if not app_obj or not base_url:
+        return []
+    wait_for = os.getenv("FIRECRAWL_WAIT_FOR", ".article, .press, main, article")
+    delay_ms = int(os.getenv("CRAWL_DELAY_MS", "1200"))
+    items: List[Dict] = []
+    # Try with pageOptions and crawler options if supported
+    try:
+        docs = app_obj.crawl(url=base_url, limit=limit, pageOptions={"waitFor": wait_for, "timeout": 60000, "includeHtml": True, "parsePDF": True})  # type: ignore
+    except TypeError:
+        try:
+            docs = app_obj.crawl({"url": base_url, "limit": limit, "crawlerOptions": {"maxDepth": max_depth, "delayMs": delay_ms}, "pageOptions": {"waitFor": wait_for, "timeout": 60000}})  # type: ignore
+        except Exception:
+            docs = None  # type: ignore
+    except Exception:
+        docs = None  # type: ignore
+    # polite delay
+    if delay_ms > 0:
+        time.sleep(delay_ms / 1000.0)
+    if isinstance(docs, dict) and "data" in docs:
+        items = docs.get("data") or []
+    elif hasattr(docs, "data"):
+        items = getattr(docs, "data") or []  # type: ignore
+    elif isinstance(docs, list):
+        items = docs  # type: ignore
+    urls: List[str] = []
+    seen = set()
+    for it in items:
+        try:
+            meta = (it.get("metadata") if isinstance(it, dict) else {}) or {}
+            u = meta.get("sourceURL") or meta.get("ogUrl") or meta.get("url") or (it.get("url") if isinstance(it, dict) else None)
+            if u and u.startswith("http") and u not in seen:
+                seen.add(u)
+                urls.append(u)
+                if len(urls) >= limit:
+                    break
+        except Exception:
+            continue
+    return urls
 
 # ---------------- Processing ----------------
 
@@ -361,11 +431,23 @@ def process_article(oa: OpenAI, authority: str, url: str, fc_app, since_date: dt
         logging.info(f"FETCH_PROVIDER=firecrawl url={url}")
         if metrics is not None:
             metrics["prov_fc_article"] = metrics.get("prov_fc_article", 0) + 1
+            try:
+                if authority and isinstance(metrics.get("by_auth"), dict):
+                    slot = metrics["by_auth"].setdefault(authority, {})
+                    slot["fc_article"] = slot.get("fc_article", 0) + 1
+            except Exception:
+                pass
 
     if not text:
         logging.info(f"FETCH_PROVIDER=http url={url}")
         if metrics is not None:
             metrics["prov_http_article"] = metrics.get("prov_http_article", 0) + 1
+            try:
+                if authority and isinstance(metrics.get("by_auth"), dict):
+                    slot = metrics["by_auth"].setdefault(authority, {})
+                    slot["http_article"] = slot.get("http_article", 0) + 1
+            except Exception:
+                pass
         data, ctype = http_get(url)
         if looks_like_pdf(url, ctype):
             content_type = "pdf"
@@ -613,9 +695,10 @@ def main():
     seed = load_seed(); rules = load_rules()
 
     fc_app = None
-    if FirecrawlApp and os.getenv("FIRECRAWL_API_KEY"):
+    if Firecrawl and os.getenv("FIRECRAWL_API_KEY"):
         try:
-            fc_app = FirecrawlApp(api_key=os.getenv("FIRECRAWL_API_KEY"))  # type: ignore
+            fc_app = Firecrawl(api_key=os.getenv("FIRECRAWL_API_KEY"))  # type: ignore
+            logging.info("Firecrawl v2 client initialized; assuming stealth proxies enabled at account level.")
         except Exception:
             logging.warning("Firecrawl init failed; falling back to urllib")
 
@@ -645,6 +728,7 @@ def main():
         "prov_http_landing": 0,
         "prov_fc_article": 0,
         "prov_http_article": 0,
+        "by_auth": {},  # per-authority tallies
         "start": time.time(),
     }
 
@@ -670,19 +754,41 @@ def main():
             if used_feed:
                 continue
 
-            landing = fc_fetch(fc_app, base) if fc_app else None
-            html = landing.get("html") if landing else ""
-            if landing and html:
-                logging.info(f"FETCH_PROVIDER=firecrawl url={base}")
-                metrics["prov_fc_landing"] += 1
+            # Per-authority metrics bucket
+            auth_key = label or base
+            am = metrics.setdefault("by_auth", {}).setdefault(auth_key, {"fc_landing": 0, "http_landing": 0, "fc_article": 0, "http_article": 0})
 
-            if not html:
-                logging.info(f"FETCH_PROVIDER=http url={base}")
-                metrics["prov_http_landing"] += 1
-                data, ct = http_get(base)
-                if ct.startswith("text"):
-                    html = data.decode("utf-8", errors="ignore")
-            links = discover_links(base, html, limit=8)
+            # Prefer Firecrawl v2 crawl for landing discovery
+            links: List[str] = []
+            if fc_app:
+                try:
+                    links = fc_crawl_links(fc_app, base, limit=8, max_depth=1)
+                    if links:
+                        logging.info(f"FETCH_PROVIDER=firecrawl mode=crawl url={base}")
+                        metrics["prov_fc_landing"] += 1
+                        am["fc_landing"] += 1
+                except Exception:
+                    links = []
+
+            # Fallback: scrape landing with Firecrawl then HTTP and extract links
+            if not links:
+                html = ""
+                if fc_app:
+                    landing = fc_fetch(fc_app, base)
+                    html = landing.get("html") if landing else ""
+                    if html:
+                        logging.info(f"FETCH_PROVIDER=firecrawl mode=scrape url={base}")
+                        metrics["prov_fc_landing"] += 1
+                        am["fc_landing"] += 1
+                if not html:
+                    logging.info(f"FETCH_PROVIDER=http url={base}")
+                    metrics["prov_http_landing"] += 1
+                    am["http_landing"] += 1
+                    data, ct = http_get(base)
+                    if ct.startswith("text"):
+                        html = data.decode("utf-8", errors="ignore")
+                links = discover_links(base, html or "", limit=8)
+
             # process up to 5 links per source
             for url in links[:5]:
                 try:
@@ -695,13 +801,28 @@ def main():
 
     duration_ms = int((time.time() - metrics["start"]) * 1000)
     out = {
-        "metrics": {k: v for k, v in metrics.items() if k != "start"},
+        "metrics": {k: v for k, v in metrics.items() if k not in ("start", "by_auth")},
         "provider_summary": {
             "landing": {"firecrawl": metrics["prov_fc_landing"], "http": metrics["prov_http_landing"]},
             "articles": {"firecrawl": metrics["prov_fc_article"], "http": metrics["prov_http_article"]},
+            "by_authority": metrics.get("by_auth", {}),
         },
         "duration_ms": duration_ms,
     }
+    # Write provider usage CSV snapshot
+    try:
+        out_dir = os.path.join("data", "output", "validation", "latest")
+        os.makedirs(out_dir, exist_ok=True)
+        csv_path = os.path.join(out_dir, "provider_usage.csv")
+        with open(csv_path, "w", encoding="utf-8", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["authority", "fc_landing", "http_landing", "fc_article", "http_article"])
+            for auth, row in sorted(metrics.get("by_auth", {}).items()):
+                w.writerow([auth, row.get("fc_landing", 0), row.get("http_landing", 0), row.get("fc_article", 0), row.get("http_article", 0)])
+        logging.info(f"wrote provider usage CSV: {csv_path}")
+    except Exception as se:
+        logging.warning(f"provider usage CSV write failed: {se}")
+
     logging.info(json.dumps(out))
     sys.exit(0)
 

@@ -4,6 +4,9 @@
 - Rendering: Global render=true; selective render=false for fast HTML authorities (PDPC, SC, OJK, BI)
 - Limits: discover_links=8, process_per_source=5, delay≈1200ms, redirects≤5
 - Seeds are authoritative in configs/firecrawl_seed.json (mirrored in config/sources.yaml)
+- Firecrawl v2 parameters used: formats=[markdown, html], pageOptions.waitFor(ms), timeout=60000, includeHtml=true, parsers=[pdf]; proxy: auto|stealth
+- Stealth proxies enabled for ASEAN and OJK; others default to auto
+
 
 ### Authorities and Methods
 

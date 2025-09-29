@@ -46,6 +46,9 @@ regional_gov:
 
   - { name: "IMDA (Singapore) Press", url: "https://www.imda.gov.sg/resources/press-releases-factsheets-and-speeches", category: "Official Data", max_depth: 1, limit: 10 }
 
+  - { name: "OJK (Indonesia) Press", url: "https://www.ojk.go.id/id/berita-dan-kegiatan/siaran-pers", category: "Official Data", max_depth: 1, limit: 10 }
+  - { name: "Bank Indonesia (BI) News Releases", url: "https://www.bi.go.id/id/publikasi/ruang-media/news-release/", category: "Official Data", max_depth: 1, limit: 10 }
+
   - { name: "BOT (Thailand) Press", url: "https://www.bot.or.th/en/press/", category: "Official Data", max_depth: 1, limit: 8 }
 
   - { name: "BOT (Thailand) News", url: "https://www.bot.or.th/en/news-and-media/press-release", category: "Official Data", max_depth: 1, limit: 10 }

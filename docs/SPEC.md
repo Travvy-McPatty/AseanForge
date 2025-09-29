@@ -11,6 +11,16 @@
 - Recommended env loading (no secret echo): `env $(grep -Ev '^#|^$' app/.env | xargs) .venv/bin/python app/ingest.py ...`
 - Logs/artifacts for validations should write under `data/output/validation/latest/`
 
+### Fetch Provider Policy (v2 SDK)
+- Firecrawl v2 SDK is the primary provider (`scrape`/`crawl`) with exact docs parameters
+  - scrape: formats=["markdown","html"], pageOptions={waitFor(ms), timeout, includeHtml}, parsers=["pdf"], proxy in {auto, stealth}
+  - crawl: url, limit, pageOptions={waitFor(ms), timeout, includeHtml}, proxy, poll_interval=1, timeout=120
+- Graceful degradation: v2 → legacy → HTTP fallback (HTTP only if FC returns empty)
+- Authority overrides:
+  - ASEAN, OJK → proxy=stealth, pageOptions.waitFor=5000
+  - MAS, IMDA, BI → proxy=auto, pageOptions.waitFor=2000
+
+
 ### Limits
 - Max links discovered per source: 8
 - Max links processed per source: 5
