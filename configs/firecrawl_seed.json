@@ -30,7 +30,7 @@
     "IMDA": {"proxy": "auto"},
     "MAS": {"proxy": "auto"},
     "BI": {"proxy": "auto"},
-    "BNM": {"proxy": "stealth", "pageOptions": {"waitFor": 5000}},
+    "BNM": {"proxy": "stealth", "pageOptions": {"waitFor": 15000}},
     "MCMC": {"proxy": "stealth", "pageOptions": {"waitFor": 5000}},
     "DICT": {"proxy": "stealth", "pageOptions": {"waitFor": 5000}},
     "BSP": {"proxy": "auto"},
@@ -46,7 +46,8 @@
   "selectors": {
     "MAS": ["article .article-content", ".article-content", "main", "article"],
     "IMDA": [".rich-text", ".content", "article", "main"],
-    "KOMINFO": ["article", ".post", ".entry", ".news__item", ".entry-content"]
+    "KOMINFO": ["article", ".post", ".entry", ".news__item", ".entry-content"],
+    "BNM": ["article", ".press-release", ".entry-content", ".post-content"]
   },
   "denySelectors": ["header", "nav", "footer", ".breadcrumb", ".share", ".social", ".related", ".tags"],
   "startUrls": [
@@ -63,14 +64,24 @@
 {"url": "https://kominfo.go.id/feed", "label": "KOMINFO", "render": true, "proxy": "stealth", "pageOptions": {"waitFor": 12000}},
     {"url": "https://www.bot.or.th/en/news-and-media.html", "label": "BOT", "render": true},
     {"url": "https://www.bot.or.th/en/news-and-media/news.html", "label": "BOT", "render": true},
-    {"url": "https://www.bnm.gov.my/press-release", "label": "BNM", "render": true},
-{"url": "https://www.bnm.gov.my/sitemap.xml", "label": "BNM", "render": true, "proxy": "stealth", "pageOptions": {"waitFor": 12000}},
+    {"url": "https://www.bnm.gov.my/press-release", "label": "BNM", "render": true, "proxy": "stealth", "pageOptions": {"waitFor": 15000}, "maxDepth": 2},
+{"url": "https://www.bnm.gov.my/sitemap.xml", "label": "BNM", "render": true, "proxy": "stealth", "pageOptions": {"waitFor": 15000}, "maxDepth": 2},
     {"url": "https://www.sc.com.my/resources/media/media-release", "label": "SC", "render": false},
     {"url": "https://www.mcmc.gov.my/media/media-releases", "label": "MCMC", "render": true},
     {"url": "https://www.bsp.gov.ph/SitePages/MediaAndResearch/MediaList.aspx", "label": "BSP", "render": true},
     {"url": "https://dict.gov.ph/category/press-releases/", "label": "DICT", "render": true},
     {"url": "https://english.mic.gov.vn/Pages/TinTuc/tintuckinhte.aspx", "label": "MIC", "render": true},
-    {"url": "https://sbv.gov.vn/en/", "label": "SBV", "render": true}
+    {"url": "https://sbv.gov.vn/en/", "label": "SBV", "render": true},
+    {"url": "https://www.mas.gov.sg/regulation", "label": "MAS", "render": true},
+    {"url": "https://www.mas.gov.sg/regulation/notices", "label": "MAS", "render": true},
+    {"url": "https://www.mas.gov.sg/regulation/guidelines", "label": "MAS", "render": true},
+    {"url": "https://www.sc.com.my/regulation/guidelines", "label": "SC", "render": true},
+    {"url": "https://www.imda.gov.sg/regulations-and-licensing-listing", "label": "IMDA", "render": true}
+,
+    {"url": "https://www.sc.com.my/regulation", "label": "SC", "render": true},
+    {"url": "https://www.ojk.go.id/en/regulations/ojk-regulations/Pages/default.aspx", "label": "OJK", "render": true},
+    {"url": "https://www.bsp.gov.ph/Regulations", "label": "BSP", "render": true}
+
   ]
 }
 

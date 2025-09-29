@@ -57,8 +57,20 @@ regional_gov:
   - { name: "SC (Malaysia) Media Releases", url: "https://www.sc.com.my/resources/media/media-release", category: "Official Data", max_depth: 1, limit: 10 }
 
 
-  - { name: "BNM (Malaysia) Press Releases", url: "https://www.bnm.gov.my/press-release", category: "Official Data", max_depth: 1, limit: 10 }
-  - { name: "BNM (Malaysia) Sitemap", url: "https://www.bnm.gov.my/sitemap.xml", category: "Official Data", max_depth: 1, limit: 10 }
+  # Canonical backfill seeds (Phase 2A — validated 200)
+  - { name: "MAS (Singapore) Regulation", url: "https://www.mas.gov.sg/regulation", category: "Official Data", max_depth: 1, limit: 10 }
+  - { name: "MAS (Singapore) Notices", url: "https://www.mas.gov.sg/regulation/notices", category: "Official Data", max_depth: 1, limit: 10 }
+  - { name: "MAS (Singapore) Guidelines", url: "https://www.mas.gov.sg/regulation/guidelines", category: "Official Data", max_depth: 1, limit: 10 }
+  - { name: "SC (Malaysia) Guidelines", url: "https://www.sc.com.my/regulation/guidelines", category: "Official Data", max_depth: 1, limit: 10 }
+  - { name: "IMDA (Singapore) Regulations & Licensing", url: "https://www.imda.gov.sg/regulations-and-licensing-listing", category: "Official Data", max_depth: 1, limit: 10 }
+  - { name: "SC (Malaysia) Regulation", url: "https://www.sc.com.my/regulation", category: "Official Data", max_depth: 1, limit: 10 }
+  - { name: "OJK (Indonesia) OJK Regulations", url: "https://www.ojk.go.id/en/regulations/ojk-regulations/Pages/default.aspx", category: "Official Data", max_depth: 1, limit: 10 }
+  - { name: "BSP (Philippines) Regulations", url: "https://www.bsp.gov.ph/Regulations", category: "Official Data", max_depth: 1, limit: 10 }
+
+
+
+  - { name: "BNM (Malaysia) Press Releases", url: "https://www.bnm.gov.my/press-release", category: "Official Data", max_depth: 2, limit: 10 }
+  - { name: "BNM (Malaysia) Sitemap", url: "https://www.bnm.gov.my/sitemap.xml", category: "Official Data", max_depth: 2, limit: 10 }
   - { name: "MCMC (Malaysia) Media Releases", url: "https://www.mcmc.gov.my/media/media-releases", category: "Official Data", max_depth: 1, limit: 10 }
   - { name: "BSP (Philippines) Media & Research", url: "https://www.bsp.gov.ph/SitePages/MediaAndResearch/MediaList.aspx", category: "Official Data", max_depth: 1, limit: 10 }
   - { name: "DICT (Philippines) Press Releases", url: "https://dict.gov.ph/category/press-releases/", category: "Official Data", max_depth: 1, limit: 10 }

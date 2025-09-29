@@ -448,7 +448,7 @@ def ingest_from_crawl_item(session, url: str, title: str, domain: Optional[str],
     return pages_added, chunks_added
 
 
-def run_ingest(config_path: str, dry_run: bool = False, limit_per_source: int = 10, max_depth: int = 1) -> None:
+def run_ingest(config_path: str, dry_run: bool = False, limit_per_source: int = 10, max_depth: int = 1, pdf_only: bool = False) -> None:
     load_dotenv(override=True)
     entries = load_sources_config(config_path)
     # Prepare vector store for embeddings if available and not a dry run
@@ -724,6 +724,18 @@ def run_ingest(config_path: str, dry_run: bool = False, limit_per_source: int = 
                         print(f"    markdown_snippet='{snippet}'")
                     print(f"    extracted url={meta_url} title={meta_title} domain={domain} published_at={published_at}")
 
+                # Optional PDF-only mode: skip non-PDF URLs early
+                if pdf_only:
+                    check_url = (meta_url or url0 or "").split("?")[0].lower()
+                    if not check_url.endswith(".pdf"):
+                        try:
+                            write_quality_drop(auth_lbl2 if 'auth_lbl2' in locals() else (authority_from_entry(entry) or authority_from_url(meta_url or url0 or "")), meta_url or (url0 or ""), "not_pdf", metric="0")
+                        except Exception:
+                            pass
+                        if INGEST_DEBUG or dry_run:
+                            print("    decision=SKIP reasons=['not_pdf']")
+                        continue
+
                 reasons = []
                 if not markdown:
                     reasons.append("no_markdown")
@@ -845,6 +857,7 @@ if __name__ == "__main__":
     ap.add_argument("--dry-run", action="store_true", help="Fetch and parse only; do not write to DB")
     ap.add_argument("--limit-per-source", type=int, default=10, help="Max pages per source per run")
     ap.add_argument("--max-depth", type=int, default=1, help="Max crawl depth (hint to crawler; may be ignored)")
+    ap.add_argument("--pdf-only", action="store_true", help="Filter to PDF documents only (by URL extension)")
     args = ap.parse_args()
-    run_ingest(config_path=args.config, dry_run=args.dry_run, limit_per_source=args.limit_per_source, max_depth=args.max_depth)
+    run_ingest(config_path=args.config, dry_run=args.dry_run, limit_per_source=args.limit_per_source, max_depth=args.max_depth, pdf_only=args.pdf_only)
 

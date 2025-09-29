@@ -81,3 +81,21 @@
 - [ ] Idempotency reruns + DB proofs bundled
 
 - [ ] Idempotency reruns & DB proofs attached
+
+
+### Canonical Backfill Sprint Update (2025-09-29)
+- Phase A (Light) in progress: canonical seeds added for MAS, SC, IMDA, OJK, BSP (HTTP 200 validated)
+- Phase B (PDF-focus) supported via new `--pdf-only` flag in scripts/ingest_sources.py (dry-run verified)
+- Pending: execute full Phase A/B runs and produce updated DB proofs + snapshot ZIP
+- Blockers: Rotate API keys due to accidental env echo during a dry-run setup; then proceed with write-mode backfill
+- Snapshot: deliverables/policy_tape_snapshot_<TS>.zip (to be generated after runs)
+- Idempotency: Phase A/B rerun proofs to be attached post-execution
+
+
+- 2025-09-30T06:44:31Z: events=168, documents=96, zip=deliverables/policy_tape_snapshot_20250930_064431.zip (Canonical Backfill Phase A — Light)
+- 2025-09-30T06:44:31Z: events=168, documents=96, zip=deliverables/policy_tape_snapshot_20250930_064431.zip (Canonical Backfill Phase B — PDF-Focus)
+
+### Pending Vendor Support (BNM & KOMINFO)
+- [ ] BNM (Malaysia) unlock — awaiting Firecrawl vendor response on 403/stealth configuration
+- [ ] KOMINFO (Indonesia) unlock — awaiting Firecrawl vendor response on zero-content yield
+- Vendor packet: `data/output/validation/latest/firecrawl_vendor_packet.md`
