@@ -1,6 +1,28 @@
 {
-  "crawlerOptions": {"maxConcurrency": 2, "delayMs": 1200, "maxDepth": 1, "allowSubdomains": true, "render": true, "waitUntil": "networkidle"},
-  "scrapeOptions": {"formats": ["text", "html", "markdown"], "onlyMainContent": true, "javascript": true, "pdf": {"enabled": true}},
+  "crawlerOptions": {
+    "maxConcurrency": 2,
+    "delayMs": 1200,
+    "maxDepth": 2,
+    "allowSubdomains": true,
+    "render": true,
+    "waitUntil": "networkidle",
+    "stealthProxy": true,
+    "timeout": 60000
+  },
+  "scrapeOptions": {
+    "formats": ["text", "html", "markdown"],
+    "onlyMainContent": true,
+    "javascript": true,
+    "pdf": {"enabled": true, "parsePDF": true},
+    "ocr_fallback": true
+  },
+  "aggressiveAuthorities": {
+    "IMDA": {"stealthProxy": true, "timeout": 60000},
+    "OJK": {"stealthProxy": true, "timeout": 60000},
+    "MAS": {"stealthProxy": true, "timeout": 60000},
+    "BI": {"stealthProxy": true, "timeout": 60000},
+    "ASEAN": {"stealthProxy": true, "timeout": 60000}
+  },
   "selectors": {
     "MAS": ["article .article-content", ".article-content", "main", "article"],
     "IMDA": [".rich-text", ".content", "article", "main"]
@@ -14,8 +36,8 @@
     {"url": "https://asean.org/category/news/", "label": "ASEAN", "render": true},
     {"url": "https://asean.org/category/announcements/", "label": "ASEAN", "render": true},
     {"url": "https://www.pdpc.gov.sg/News-and-Events", "label": "PDPC", "render": false},
-    {"url": "https://www.bi.go.id/id/publikasi/ruang-media/news-release/", "label": "BI", "render": false},
-    {"url": "https://www.ojk.go.id/id/berita-dan-kegiatan/siaran-pers", "label": "OJK", "render": false},
+    {"url": "https://www.bi.go.id/id/publikasi/ruang-media/news-release/", "label": "BI", "render": true},
+    {"url": "https://www.ojk.go.id/id/berita-dan-kegiatan/siaran-pers", "label": "OJK", "render": true},
     {"url": "https://kominfo.go.id/siaran-pers", "label": "KOMINFO", "render": true},
     {"url": "https://www.bot.or.th/en/news-and-media/press-release", "label": "BOT", "render": true},
     {"url": "https://www.bot.or.th/en/press/", "label": "BOT", "render": true},

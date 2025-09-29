@@ -55,6 +55,8 @@ import psycopg2
 from openai import OpenAI
 import yaml
 
+import csv
+
 TZ = os.getenv("TIMEZONE", "Asia/Jakarta")
 
 COUNTRY_BY_AUTH = {
@@ -312,6 +314,8 @@ def fc_fetch(app_obj, url: str) -> Optional[Dict]:
             "javascript": True,
             "onlyMainContent": True,
             "pdf": {"enabled": True},
+            "waitUntil": "networkidle",
+            "timeout": 60000,
         })
         return {
             "html": result.get("html") or "",
@@ -320,6 +324,32 @@ def fc_fetch(app_obj, url: str) -> Optional[Dict]:
         }
     except Exception:
         return None
+
+def fc_fetch_with_params(app_obj, url: str, params: Dict) -> Tuple[Optional[Dict], Optional[str]]:
+    """Firecrawl fetch with explicit params; returns (page, error_note). Tries multiple SDK method names."""
+    if not app_obj:
+        return None, "no_firecrawl_app"
+    last_err: Optional[str] = None
+    for meth_name in ("scrape_url", "scrapeUrl", "scrape"):
+        try:
+            meth = getattr(app_obj, meth_name, None)
+            if not meth:
+                continue
+            try:
+                result = meth(url, params=params)
+            except TypeError:
+                # Some SDKs accept a single dict payload
+                result = meth({"url": url, **params})
+            page = {
+                "html": (result.get("html") if isinstance(result, dict) else "") or "",
+                "text": (result.get("text") if isinstance(result, dict) else "") or "",
+                "title": (result.get("title") if isinstance(result, dict) else "") or "",
+            }
+            if page["html"] or page["text"]:
+                return page, None
+        except Exception as e:
+            last_err = f"exc={e.__class__.__name__}:{str(e)[:200]}"
+    return None, last_err or "unknown_error"
 
 # ---------------- Processing ----------------
 
@@ -449,6 +479,120 @@ def process_article(oa: OpenAI, authority: str, url: str, fc_app, since_date: dt
     logging.info(json.dumps({"action": "upsert", "authority": authority, "url": url, "inserted": bool(inserted)}))
 
 
+# ---------------- Aggressive Firecrawl Probe ----------------
+
+def _fc_params_variant(stealth: bool, timeout_ms: int) -> Dict:
+    return {
+        "formats": ["text", "html", "markdown"],
+        "javascript": True,
+        "onlyMainContent": True,
+        "pdf": {"enabled": True, "parsePDF": True},
+        "render": True,
+        "waitUntil": "networkidle",
+        "timeout": timeout_ms,
+        "stealthProxy": stealth,
+        "ocr_fallback": True,
+    }
+
+
+def _variants_matrix() -> List[Tuple[str, Dict]]:
+    out: List[Tuple[str, Dict]] = []
+    for stealth in (True, False):
+        for timeout_ms in (30000, 60000, 90000):
+            for delay in (800, 1200, 1600, 2000):
+                name = f"stealth={int(stealth)}_timeout={timeout_ms}_delayMs={delay}"
+                params = _fc_params_variant(stealth, timeout_ms)
+                params["delayMs"] = delay
+                out.append((name, params))
+    return out
+
+
+def run_aggressive_probe(authorities: List[str], pages_per_auth: int, seed: Dict, fc_app) -> None:
+    out_dir = os.path.join("data", "output", "validation", "aggressive_probe")
+    os.makedirs(out_dir, exist_ok=True)
+    summary_csv = os.path.join(out_dir, "summary.csv")
+    if not os.path.exists(summary_csv):
+        with open(summary_csv, "w", encoding="utf-8", newline="") as w:
+            csv.writer(w).writerow(["authority", "url", "variant", "provider", "status", "notes"])
+
+    # Build base URLs per authority from seed
+    bases: Dict[str, List[str]] = {}
+    for e in seed.get("startUrls", []) or []:
+        lab = e.get("label"); url = e.get("url")
+        if not lab or not url: continue
+        if lab not in authorities: continue
+        bases.setdefault(lab, [])
+        if url not in bases[lab]:
+            bases[lab].append(url)
+
+    for auth, base_list in bases.items():
+        log_path = os.path.join(out_dir, f"{auth.lower()}_probe.log")
+        with open(log_path, "a", encoding="utf-8") as logf, open(summary_csv, "a", encoding="utf-8", newline="") as wcsv:
+            writer = csv.writer(wcsv)
+            for base in base_list:
+                # Discover candidate pages from landing
+                html = ""
+                try:
+                    data, ct = http_get(base)
+                    if (ct or "").startswith("text"):
+                        html = data.decode("utf-8", errors="ignore")
+                except Exception as e:
+                    logf.write(f"landing_http_error {base} {e}\n")
+                if not html and fc_app:
+                    page, err = fc_fetch_with_params(fc_app, base, _fc_params_variant(True, 60000))
+                    if page and page.get("html"):
+                        html = page.get("html")
+                        logging.info(f"FETCH_PROVIDER=firecrawl url={base}")
+                        logf.write(f"landing_firecrawl_ok {base}\n")
+                    else:
+                        logf.write(f"landing_firecrawl_fail {base} {err}\n")
+                candidates = [base] + discover_links(base, html or "", limit=max(5, pages_per_auth*2))
+                candidates = candidates[:pages_per_auth]
+
+                # Test each candidate with variants, then fallback to HTTP
+                for url in candidates:
+                    success = False
+                    for vname, vparams in _variants_matrix():
+                        page, err = fc_fetch_with_params(fc_app, url, vparams)
+                        if page and (page.get("text") or page.get("html")):
+                            logging.info(f"FETCH_PROVIDER=firecrawl url={url}")
+                            writer.writerow([auth, url, vname, "firecrawl", "ok", ""])
+                            logf.write(f"ok_firecrawl {vname} {url}\n")
+                            success = True
+                            break
+                        else:
+                            note = err or "empty"
+                            if note and ("captcha" in note.lower() or "are you a robot" in note.lower()):
+                                logf.write(f"captcha_detected {vname} {url} {note}\n")
+                            elif note and ("429" in note or "rate" in note.lower()):
+                                logf.write(f"rate_limited {vname} {url} {note}\n")
+                            elif note and ("timeout" in note.lower()):
+                                logf.write(f"timeout {vname} {url} {note}\n")
+                            elif note and ("403" in note or "blocked" in note.lower() or "proxy" in note.lower()):
+                                logf.write(f"proxy_inadequate {vname} {url} {note}\n")
+                            else:
+                                logf.write(f"firecrawl_fail {vname} {url} {note}\n")
+                    if success:
+                        continue
+                    # HTTP fallback
+                    try:
+                        data, ct = http_get(url)
+                        text = ""
+                        if looks_like_pdf(url, ct):
+                            text = pdf_text_from_bytes(data)
+                        elif (ct or "").startswith("text"):
+                            text = strip_html(data.decode("utf-8", errors="ignore"))
+                        if text:
+                            writer.writerow([auth, url, "-", "http", "ok", "fallback"])
+                            logf.write(f"ok_http {url}\n")
+                        else:
+                            writer.writerow([auth, url, "-", "http", "empty", "fallback_empty"])
+                            logf.write(f"http_empty {url}\n")
+                    except Exception as e:
+                        writer.writerow([auth, url, "-", "http", "error", str(e)[:120]])
+                        logf.write(f"http_error {url} {e}\n")
+
+
 def main():
     parser = argparse.ArgumentParser(description="ASEANForge Policy Tape Ingestion (MVP)")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -459,19 +603,14 @@ def main():
     p_dry = sub.add_parser("dry-run", help="Run ingestion without DB writes")
     p_dry.add_argument("--since", type=str, required=True, help="YYYY-MM-DD")
 
+    p_probe = sub.add_parser("probe-aggressive", help="Aggressive Firecrawl troubleshooting probe")
+    p_probe.add_argument("--authorities", type=str, default="IMDA,OJK,MAS,BI,ASEAN")
+    p_probe.add_argument("--pages", type=int, default=8)
+
     args = parser.parse_args()
     logging.basicConfig(level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO))
 
-    try:
-        since = dt.date.fromisoformat(args.since)
-    except Exception:
-        print("--since must be YYYY-MM-DD", file=sys.stderr)
-        sys.exit(2)
-
     seed = load_seed(); rules = load_rules()
-    start_urls = seed.get("startUrls", [])  # ingest all configured authorities
-
-    oa = openai_client()
 
     fc_app = None
     if FirecrawlApp and os.getenv("FIRECRAWL_API_KEY"):
@@ -479,6 +618,23 @@ def main():
             fc_app = FirecrawlApp(api_key=os.getenv("FIRECRAWL_API_KEY"))  # type: ignore
         except Exception:
             logging.warning("Firecrawl init failed; falling back to urllib")
+
+    if args.cmd == "probe-aggressive":
+        auths = [a.strip().upper() for a in (args.authorities or "").split(",") if a.strip()]
+        run_aggressive_probe(auths, int(args.pages or 8), seed, fc_app)
+        logging.info(json.dumps({"probe_done": True, "authorities": auths}))
+        sys.exit(0)
+
+    # For run/dry-run flows, parse since
+    try:
+        since = dt.date.fromisoformat(args.since)
+    except Exception:
+        print("--since must be YYYY-MM-DD", file=sys.stderr)
+        sys.exit(2)
+
+    start_urls = seed.get("startUrls", [])  # ingest all configured authorities
+
+    oa = openai_client()
 
     # provider counters
     metrics = {
