@@ -61,3 +61,12 @@
 - 20250928T044533Z: events=50, documents=28, zip=deliverables/policy_tape_snapshot_20250928T044533Z.zip (Firecrawl-first)
 - 20250928T061759Z: events=50, documents=28, zip=deliverables/policy_tape_snapshot_20250928T061759Z.zip (Firecrawl-first + feeds cataloged)
 - 20250928T075201Z: events=72, documents=29, zip=deliverables/policy_tape_snapshot_20250928T075201Z.zip (Firecrawl-first unlock)
+- 20250929T110033Z: events=238, documents=96, zip=deliverables/policy_tape_snapshot_20250929T110033Z.zip (closeout)
+
+
+### Next Sprint — Canonical Backfill (Core Rulebook + 24–36m recents)
+- [ ] Canonical pages per authority (laws/acts, regs, notices, gazettes) — CSV seed committed
+- [ ] Backfill window (since 2019-01-01) executed with Firecrawl-first + PDF parsing
+- [ ] Version tags (revised/amended) stored
+- [ ] Export: deliverables/events.csv, deliverables/documents.csv + snapshot ZIP
+- [ ] Idempotency reruns & DB proofs attached

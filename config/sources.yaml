@@ -29,8 +29,8 @@ official_data:
   - { name: "IMF (News)", url: "https://www.imf.org/en/News", category: "Official Data", max_depth: 1, limit: 12 }
   - { name: "World Bank (East Asia & Pacific)", url: "https://www.worldbank.org/en/region/eap/publications", category: "Official Data", max_depth: 1, limit: 10 }
 
-  - { name: "ASEAN Secretariat (News)", url: "https://asean.org/category/news/", category: "Official Data", max_depth: 1, limit: 10 }
-  - { name: "ASEAN Secretariat (Announcements)", url: "https://asean.org/category/announcements/", category: "Official Data", max_depth: 1, limit: 8 }
+  - { name: "ASEAN Secretariat (Press Releases)", url: "https://asean.org/tag/press-release/", category: "Official Data", max_depth: 1, limit: 10 }
+  - { name: "ASEAN Secretariat (News)", url: "https://asean.org/news/", category: "Official Data", max_depth: 1, limit: 8 }
 
 
 specialist:
@@ -49,7 +49,20 @@ regional_gov:
   - { name: "OJK (Indonesia) Press", url: "https://www.ojk.go.id/id/berita-dan-kegiatan/siaran-pers", category: "Official Data", max_depth: 1, limit: 10 }
   - { name: "Bank Indonesia (BI) News Releases", url: "https://www.bi.go.id/id/publikasi/ruang-media/news-release/", category: "Official Data", max_depth: 1, limit: 10 }
 
-  - { name: "BOT (Thailand) Press", url: "https://www.bot.or.th/en/press/", category: "Official Data", max_depth: 1, limit: 8 }
+  - { name: "BOT (Thailand) News & Media", url: "https://www.bot.or.th/en/news-and-media.html", category: "Official Data", max_depth: 1, limit: 8 }
 
-  - { name: "BOT (Thailand) News", url: "https://www.bot.or.th/en/news-and-media/press-release", category: "Official Data", max_depth: 1, limit: 10 }
+  - { name: "BOT (Thailand) News Listing", url: "https://www.bot.or.th/en/news-and-media/news.html", category: "Official Data", max_depth: 1, limit: 10 }
 
+  - { name: "PDPC (Singapore) Announcements", url: "https://www.pdpc.gov.sg/News-and-Events", category: "Official Data", max_depth: 1, limit: 10 }
+  - { name: "SC (Malaysia) Media Releases", url: "https://www.sc.com.my/resources/media/media-release", category: "Official Data", max_depth: 1, limit: 10 }
+
+
+  - { name: "BNM (Malaysia) Press Releases", url: "https://www.bnm.gov.my/press-release", category: "Official Data", max_depth: 1, limit: 10 }
+  - { name: "BNM (Malaysia) Sitemap", url: "https://www.bnm.gov.my/sitemap.xml", category: "Official Data", max_depth: 1, limit: 10 }
+  - { name: "MCMC (Malaysia) Media Releases", url: "https://www.mcmc.gov.my/media/media-releases", category: "Official Data", max_depth: 1, limit: 10 }
+  - { name: "BSP (Philippines) Media & Research", url: "https://www.bsp.gov.ph/SitePages/MediaAndResearch/MediaList.aspx", category: "Official Data", max_depth: 1, limit: 10 }
+  - { name: "DICT (Philippines) Press Releases", url: "https://dict.gov.ph/category/press-releases/", category: "Official Data", max_depth: 1, limit: 10 }
+  - { name: "MIC (Vietnam) News", url: "https://english.mic.gov.vn/Pages/TinTuc/tintuckinhte.aspx", category: "Official Data", max_depth: 1, limit: 10 }
+  - { name: "SBV (Vietnam) English Portal", url: "https://sbv.gov.vn/en/", category: "Official Data", max_depth: 1, limit: 10 }
+  - { name: "KOMINFO (Indonesia) Press", url: "https://kominfo.go.id/siaran-pers", category: "Official Data", max_depth: 1, limit: 10 }
+  - { name: "KOMINFO (Indonesia) Feed", url: "https://kominfo.go.id/feed", category: "Official Data", max_depth: 1, limit: 10 }
