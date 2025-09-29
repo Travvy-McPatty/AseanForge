@@ -238,7 +238,6 @@ def summarize(client: OpenAI, text: str, source_lang: str) -> str:
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": text},
         ],
-        temperature=0.1,
     )
     return (resp.choices[0].message.content or "").strip()
 
@@ -304,46 +303,169 @@ def parse_published_at(html: str) -> Optional[dt.datetime]:
     return None
 
 # ---------------- Firecrawl ----------------
+# Per-authority Firecrawl proxy/wait policy and telemetry helper
+from typing import Optional, Tuple
 
-# v2 helper: Firecrawl-first scrape with robust param shapes and polite delay
-def fc_fetch(app_obj, url: str) -> Optional[Dict]:
+def resolve_fc_proxy_and_wait_ms(authority: Optional[str]) -> Tuple[str, int]:
+    auth = (authority or "").upper()
+    wait_default = int(os.getenv("FIRECRAWL_WAIT_MS", "2000"))
+    if auth in ("BNM", "KOMINFO"):
+        return ("stealth", 12000)
+    if auth in ("ASEAN", "OJK", "MCMC", "DICT"):
+        return ("stealth", 5000)
+    return ("auto", wait_default)
+
+
+def write_provider_event(authority: Optional[str], url: str, provider: str, status_code_or_error: str, wait_ms: int, proxy_mode: str, notes: str = "") -> None:
+    try:
+        out_dir = os.path.join("data", "output", "validation", "latest")
+        os.makedirs(out_dir, exist_ok=True)
+        path = os.path.join(out_dir, "provider_events.csv")
+        exists = os.path.exists(path)
+        with open(path, "a", encoding="utf-8", newline="") as f:
+            w = csv.writer(f)
+            if not exists:
+                w.writerow(["authority", "url", "provider", "status_code_or_error", "waitFor_ms", "proxy_mode", "timestamp", "notes"])
+            w.writerow([authority or "", url, provider, status_code_or_error, wait_ms, proxy_mode, dt.datetime.utcnow().isoformat(), notes])
+    except Exception:
+        pass
+
+def write_quality_drop(authority: Optional[str], url: str, reason: str, metric: str = "") -> None:
+    try:
+        out_dir = os.path.join("data", "output", "validation", "latest")
+        os.makedirs(out_dir, exist_ok=True)
+        path = os.path.join(out_dir, "quality_drops.csv")
+        exists = os.path.exists(path)
+        with open(path, "a", encoding="utf-8", newline="") as f:
+            w = csv.writer(f)
+            if not exists:
+                w.writerow(["authority", "url", "reason", "metric"])
+            w.writerow([authority or "", url, reason, metric])
+    except Exception:
+        pass
+
+
+def ascii_ratio(text: str) -> float:
+    if not text:
+        return 0.0
+    total = sum(1 for ch in text if not ch.isspace())
+    if total == 0:
+        return 0.0
+    ascii_count = sum(1 for ch in text if ord(ch) < 128 and not ch.isspace())
+    return ascii_count / total
+
+
+def is_link_farm_html(html: str) -> float:
+    if not html:
+        return 0.0
+    nonws = ''.join(ch for ch in html if not ch.isspace())
+    if not nonws:
+        return 0.0
+    links = re.findall(r"<a\b[\s\S]*?>([\s\S]*?)</a>", html, flags=re.I)
+    link_chars = sum(len(''.join(x.split())) for x in links)
+    list_items = re.findall(r"<li\b[\s\S]*?</li>", html, flags=re.I)
+    li_chars = sum(len(''.join(x.split())) for x in list_items)
+    return min(1.0, (link_chars + li_chars) / max(1, len(nonws)))
+
+
+def contains_not_found(title: Optional[str], text_or_html: str) -> bool:
+    hay = ((title or "") + "\n" + (text_or_html or "")).lower()
+    phrases = ["not found", "404", "page no longer exists", "this page no longer exists"]
+    return any(p in hay for p in phrases)
+
+def write_fc_error(domain: str, url: str, status: str, error_msg: str) -> None:
+    try:
+        out_dir = os.path.join("data", "output", "validation", "latest")
+        os.makedirs(out_dir, exist_ok=True)
+        path = os.path.join(out_dir, "fc_errors.csv")
+        exists = os.path.exists(path)
+        with open(path, "a", encoding="utf-8", newline="") as f:
+            w = csv.writer(f)
+            if not exists:
+                w.writerow(["domain", "url", "status", "error"])
+            w.writerow([domain, url, status, (error_msg or "").strip()[:500]])
+    except Exception:
+        pass
+
+
+# v2 helper: Firecrawl-first scrape with per-authority proxy/wait and telemetry
+def fc_fetch(app_obj, url: str, authority: Optional[str], proxy_mode: str, wait_ms: int) -> Optional[Dict]:
     if not app_obj:
         return None
-    wait_for = os.getenv("FIRECRAWL_WAIT_FOR", ".article, .press, main, article")
     delay_ms = int(os.getenv("CRAWL_DELAY_MS", "1200"))
     page_opts = {
         "onlyMainContent": True,
-        "waitFor": wait_for,
+        "waitFor": int(wait_ms),
         "timeout": 60000,
         "includeHtml": True,
         "parsePDF": True,
     }
-    # Try common v2 call signatures
-    try_order = [
-        ("kw", {"url": url, "formats": ["text", "html", "markdown"], "pageOptions": page_opts}),
-        ("dict", {"url": url, "formats": ["text", "html", "markdown"], "pageOptions": page_opts}),
-    ]
-    for mode, payload in try_order:
+    api_path = "v2"
+    try:
+        # Preferred v2 signature
+        doc = app_obj.scrape(url=url, formats=["markdown", "html", "text"], pageOptions=page_opts, parsers=["pdf"], proxy=proxy_mode, maxAge=172800000)  # type: ignore
+    except TypeError:
+        # Legacy fallbacks
+        api_path = "legacy"
         try:
-            if mode == "kw":
-                doc = app_obj.scrape(url=url, formats=payload["formats"], pageOptions=payload["pageOptions"])  # type: ignore
-            else:
-                doc = app_obj.scrape(payload)  # type: ignore[arg-type]
-            data = getattr(doc, "data", {}) or {}
-            html = getattr(doc, "html", "") or (data.get("html", "") if isinstance(data, dict) else "")
-            text = getattr(doc, "text", "") or (data.get("text", "") if isinstance(data, dict) else "")
-            md = getattr(doc, "markdown", "") or (data.get("markdown", "") if isinstance(data, dict) else "")
+            doc = app_obj.scrape(url=url, formats=["markdown", "html"])  # type: ignore
+        except Exception:
+            try:
+                doc = app_obj.scrape({"url": url, "formats": ["markdown", "html"]})  # type: ignore[arg-type]
+            except Exception:
+                doc = None  # type: ignore
+    except Exception:
+        doc = None  # type: ignore
+    html = ""; text = ""; title = ""
+    if doc is not None:
+        data = getattr(doc, "data", {}) or {}
+        html = getattr(doc, "html", "") or (data.get("html", "") if isinstance(data, dict) else "")
+        text = getattr(doc, "text", "") or (data.get("text", "") if isinstance(data, dict) else "")
+        md = getattr(doc, "markdown", "") or (data.get("markdown", "") if isinstance(data, dict) else "")
+        if not text and md:
+            text = md
+        meta = (data.get("metadata") if isinstance(data, dict) else {}) or {}
+        title = meta.get("title", "")
+    # polite delay
+    if delay_ms > 0:
+        try:
+            time.sleep(delay_ms / 1000.0)
+        except Exception:
+            pass
+    try:
+        write_provider_event(authority, url, "firecrawl", ("ok" if (html or text) else "empty"), int(wait_ms), proxy_mode, api_path)
+    except Exception:
+        pass
+    if not (html or text):
+        # Retry escalation for stubborn sources with higher wait, selectors, SG locale
+        try:
+            extra_kwargs = {"maxAge": 172800000}
+            if (authority or "").upper() in ("BNM", "KOMINFO"):
+                extra_kwargs["selectors"] = ["article", ".post-content", ".news-detail"]
+                extra_kwargs["location"] = {"country": "SG", "languages": ["en-SG"]}
+            page_opts2 = {**page_opts, "waitFor": 12000}
+            doc2 = app_obj.scrape(url=url, formats=["markdown", "html", "text"], pageOptions=page_opts2, parsers=["pdf"], proxy=proxy_mode, **extra_kwargs)  # type: ignore
+            data2 = getattr(doc2, "data", {}) or {}
+            html = getattr(doc2, "html", "") or (data2.get("html", "") if isinstance(data2, dict) else "")
+            text = getattr(doc2, "text", "") or (data2.get("text", "") if isinstance(data2, dict) else "")
+            md = getattr(doc2, "markdown", "") or (data2.get("markdown", "") if isinstance(data2, dict) else "")
             if not text and md:
                 text = md
-            meta = (data.get("metadata") if isinstance(data, dict) else {}) or {}
-            title = meta.get("title", "")
-            # polite delay
-            if delay_ms > 0:
-                time.sleep(delay_ms / 1000.0)
-            if html or text:
-                return {"html": html, "text": text, "title": title}
-        except Exception:
-            continue
+        except TypeError:
+            try:
+                doc2 = app_obj.scrape(url=url, formats=["markdown", "html", "text"], pageOptions={**page_opts, "waitFor": 12000}, parsers=["pdf"], proxy=proxy_mode, maxAge=172800000)  # type: ignore
+                data2 = getattr(doc2, "data", {}) or {}
+                html = getattr(doc2, "html", "") or (data2.get("html", "") if isinstance(data2, dict) else "")
+                text = getattr(doc2, "text", "") or (data2.get("text", "") if isinstance(data2, dict) else "")
+                md = getattr(doc2, "markdown", "") or (data2.get("markdown", "") if isinstance(data2, dict) else "")
+                if not text and md:
+                    text = md
+            except Exception as e:
+                write_fc_error(urllib.parse.urlsplit(url).netloc, url, "scrape_retry_error", str(e))
+        except Exception as e:
+            write_fc_error(urllib.parse.urlsplit(url).netloc, url, "scrape_error", str(e))
+    if html or text:
+        return {"html": html, "text": text, "title": title}
     return None
 
 # Legacy flexible helper retained for probe mode; per-request stealthProxy is not supported in v2
@@ -381,31 +503,63 @@ def fc_fetch_with_params(app_obj, url: str, params: Dict) -> Tuple[Optional[Dict
     return None, last_err or "unknown_error"
 
 # v2 helper: crawl landing and extract candidate URLs (shallow)
-def fc_crawl_links(app_obj, base_url: str, limit: int = 8, max_depth: int = 1) -> List[str]:
+def fc_crawl_links(app_obj, base_url: str, limit: int = 8, max_depth: int = 1, proxy_mode: str = "auto", wait_ms: int = 2000, authority: Optional[str] = None) -> List[str]:
     if not app_obj or not base_url:
         return []
-    wait_for = os.getenv("FIRECRAWL_WAIT_FOR", ".article, .press, main, article")
     delay_ms = int(os.getenv("CRAWL_DELAY_MS", "1200"))
     items: List[Dict] = []
-    # Try with pageOptions and crawler options if supported
+    api_path = "v2"
+    # Try v2 first; fall back to legacy signatures if needed
     try:
-        docs = app_obj.crawl(url=base_url, limit=limit, pageOptions={"waitFor": wait_for, "timeout": 60000, "includeHtml": True, "parsePDF": True})  # type: ignore
+        docs = app_obj.crawl(url=base_url, limit=limit, pageOptions={"waitFor": int(wait_ms), "timeout": 60000, "includeHtml": True, "parsePDF": True, "onlyMainContent": True}, proxy=proxy_mode, poll_interval=1, timeout=120, maxAge=172800000)  # type: ignore
     except TypeError:
+        api_path = "legacy"
         try:
-            docs = app_obj.crawl({"url": base_url, "limit": limit, "crawlerOptions": {"maxDepth": max_depth, "delayMs": delay_ms}, "pageOptions": {"waitFor": wait_for, "timeout": 60000}})  # type: ignore
+            docs = app_obj.crawl(base_url, limit=limit)  # type: ignore[arg-type]
         except Exception:
-            docs = None  # type: ignore
+            try:
+                docs = app_obj.crawl({"url": base_url, "limit": limit, "crawlerOptions": {"maxDepth": max_depth, "delayMs": delay_ms}})  # type: ignore[arg-type]
+            except Exception:
+                docs = None  # type: ignore
     except Exception:
         docs = None  # type: ignore
     # polite delay
     if delay_ms > 0:
-        time.sleep(delay_ms / 1000.0)
+        try:
+            time.sleep(delay_ms / 1000.0)
+        except Exception:
+            pass
     if isinstance(docs, dict) and "data" in docs:
         items = docs.get("data") or []
     elif hasattr(docs, "data"):
         items = getattr(docs, "data") or []  # type: ignore
     elif isinstance(docs, list):
         items = docs  # type: ignore
+    else:
+        items = []
+    try:
+        write_provider_event(authority, base_url, "firecrawl", ("ok" if items else "empty"), int(wait_ms), proxy_mode, api_path)
+    except Exception:
+        pass
+    if not items and (authority or "").upper() in ("BNM", "KOMINFO"):
+        # Escalate crawl retry
+        try:
+            docs2 = app_obj.crawl(url=base_url, limit=limit, pageOptions={"waitFor": 12000, "timeout": 60000, "includeHtml": True, "parsePDF": True, "onlyMainContent": True}, proxy=proxy_mode, poll_interval=1, timeout=120, maxAge=172800000, location={"country": "SG", "languages": ["en-SG"]})  # type: ignore
+            if isinstance(docs2, dict) and "data" in docs2:
+                items = docs2.get("data") or []
+            elif hasattr(docs2, "data"):
+                items = getattr(docs2, "data") or []
+        except TypeError:
+            try:
+                docs2 = app_obj.crawl(url=base_url, limit=limit, pageOptions={"waitFor": 12000, "timeout": 60000, "includeHtml": True, "parsePDF": True, "onlyMainContent": True}, proxy=proxy_mode, poll_interval=1, timeout=120, maxAge=172800000)  # type: ignore
+                if isinstance(docs2, dict) and "data" in docs2:
+                    items = docs2.get("data") or []
+                elif hasattr(docs2, "data"):
+                    items = getattr(docs2, "data") or []
+            except Exception as e:
+                write_fc_error(urllib.parse.urlsplit(base_url).netloc, base_url, "crawl_retry_error", str(e))
+        except Exception as e:
+            write_fc_error(urllib.parse.urlsplit(base_url).netloc, base_url, "crawl_error", str(e))
     urls: List[str] = []
     seen = set()
     for it in items:
@@ -425,10 +579,15 @@ def fc_crawl_links(app_obj, base_url: str, limit: int = 8, max_depth: int = 1) -
 
 def process_article(oa: OpenAI, authority: str, url: str, fc_app, since_date: dt.date, dry_run: bool, rules: Dict, metrics: Dict):
     html_page = ""; text = ""; title = ""; content_type = "html"
-    page = fc_fetch(fc_app, url)
+    proxy_mode, wait_ms = resolve_fc_proxy_and_wait_ms(authority)
+    page = fc_fetch(fc_app, url, authority, proxy_mode, wait_ms)
     if page:
         html_page = page.get("html", ""); text = page.get("text", ""); title = page.get("title", "")
-        logging.info(f"FETCH_PROVIDER=firecrawl url={url}")
+        logging.info(f"FETCH_PROVIDER=firecrawl mode=scrape url={url} waitFor={int(wait_ms)} proxy={proxy_mode}")
+        try:
+            write_provider_event(authority, url, "firecrawl", "ok", int(wait_ms), proxy_mode, "")
+        except Exception:
+            pass
         if metrics is not None:
             metrics["prov_fc_article"] = metrics.get("prov_fc_article", 0) + 1
             try:
@@ -439,7 +598,11 @@ def process_article(oa: OpenAI, authority: str, url: str, fc_app, since_date: dt
                 pass
 
     if not text:
-        logging.info(f"FETCH_PROVIDER=http url={url}")
+        logging.info(f"FETCH_PROVIDER=http mode=scrape url={url} waitFor={int(wait_ms)} proxy={proxy_mode}")
+        try:
+            write_provider_event(authority, url, "http", "fallback", int(wait_ms), proxy_mode, "")
+        except Exception:
+            pass
         if metrics is not None:
             metrics["prov_http_article"] = metrics.get("prov_http_article", 0) + 1
             try:
@@ -464,6 +627,37 @@ def process_article(oa: OpenAI, authority: str, url: str, fc_app, since_date: dt
     if not text:
         logging.info("Empty content; skipping %s", url)
         return
+
+    # Quality gates — thin content, 404, link-farm, language, dedup
+    total_len = len((html_page or "")) + len((text or ""))
+    reasons: List[str] = []
+    if total_len < 700:
+        reasons.append("thin")
+    if contains_not_found(title, (html_page or text)):
+        reasons.append("not_found")
+    lf = is_link_farm_html(html_page or "")
+    if lf > 0.65:
+        reasons.append(f"link_farm({lf:.2f})")
+    if (authority or "").upper() in ("ASEAN","MAS","IMDA","PDPC","SC","BNM","BOT","BSP","DICT","SBV","MIC"):
+        ar = ascii_ratio(text)
+        if ar < 0.60:
+            reasons.append(f"non_english({ar:.2f})")
+    # per-run dedup hash
+    norm_title = (title or "").strip().lower()
+    first400 = (text or "")[:400]
+    qhash = hashlib.sha256((norm_title + "|" + url + "|" + first400).encode("utf-8")).hexdigest()
+    global _SEEN_QHASH
+    if '_SEEN_QHASH' not in globals():
+        _SEEN_QHASH = set()
+    if qhash in _SEEN_QHASH:
+        reasons.append("dup_hash")
+    if reasons:
+        try:
+            write_quality_drop(authority, url, ";".join(reasons), metric=str(total_len))
+        except Exception:
+            pass
+        return
+    _SEEN_QHASH.add(qhash)
 
     published_at = parse_published_at(html_page) if html_page else None
     if not published_at:
@@ -624,7 +818,7 @@ def run_aggressive_probe(authorities: List[str], pages_per_auth: int, seed: Dict
                     page, err = fc_fetch_with_params(fc_app, base, _fc_params_variant(True, 60000))
                     if page and page.get("html"):
                         html = page.get("html")
-                        logging.info(f"FETCH_PROVIDER=firecrawl url={base}")
+                        logging.info(f"FETCH_PROVIDER=firecrawl url={base} waitFor=na proxy=na")
                         logf.write(f"landing_firecrawl_ok {base}\n")
                     else:
                         logf.write(f"landing_firecrawl_fail {base} {err}\n")
@@ -637,7 +831,7 @@ def run_aggressive_probe(authorities: List[str], pages_per_auth: int, seed: Dict
                     for vname, vparams in _variants_matrix():
                         page, err = fc_fetch_with_params(fc_app, url, vparams)
                         if page and (page.get("text") or page.get("html")):
-                            logging.info(f"FETCH_PROVIDER=firecrawl url={url}")
+                            logging.info(f"FETCH_PROVIDER=firecrawl url={url} waitFor=na proxy={'stealth' if vparams.get('stealthProxy') else 'auto'}")
                             writer.writerow([auth, url, vname, "firecrawl", "ok", ""])
                             logf.write(f"ok_firecrawl {vname} {url}\n")
                             success = True
@@ -762,9 +956,11 @@ def main():
             links: List[str] = []
             if fc_app:
                 try:
-                    links = fc_crawl_links(fc_app, base, limit=8, max_depth=1)
+                    proxy_mode, wait_ms = resolve_fc_proxy_and_wait_ms(label)
+                    max_d = 2 if (label or "").upper() in ("BNM","KOMINFO") else 1
+                    links = fc_crawl_links(fc_app, base, limit=8, max_depth=max_d, proxy_mode=proxy_mode, wait_ms=int(wait_ms), authority=label)
                     if links:
-                        logging.info(f"FETCH_PROVIDER=firecrawl mode=crawl url={base}")
+                        logging.info(f"FETCH_PROVIDER=firecrawl mode=crawl url={base} waitFor={int(wait_ms)} proxy={proxy_mode}")
                         metrics["prov_fc_landing"] += 1
                         am["fc_landing"] += 1
                 except Exception:
@@ -774,14 +970,20 @@ def main():
             if not links:
                 html = ""
                 if fc_app:
-                    landing = fc_fetch(fc_app, base)
+                    proxy_mode, wait_ms = resolve_fc_proxy_and_wait_ms(label)
+                    landing = fc_fetch(fc_app, base, label, proxy_mode, int(wait_ms))
                     html = landing.get("html") if landing else ""
                     if html:
-                        logging.info(f"FETCH_PROVIDER=firecrawl mode=scrape url={base}")
+                        logging.info(f"FETCH_PROVIDER=firecrawl mode=scrape url={base} waitFor={int(wait_ms)} proxy={proxy_mode}")
                         metrics["prov_fc_landing"] += 1
                         am["fc_landing"] += 1
                 if not html:
-                    logging.info(f"FETCH_PROVIDER=http url={base}")
+                    logging.info(f"FETCH_PROVIDER=http mode=scrape url={base} waitFor={int(wait_ms)} proxy={proxy_mode}")
+                    try:
+                        proxy_mode, wait_ms = resolve_fc_proxy_and_wait_ms(label)
+                        write_provider_event(label, base, "http", "fallback", int(wait_ms), proxy_mode, "")
+                    except Exception:
+                        pass
                     metrics["prov_http_landing"] += 1
                     am["http_landing"] += 1
                     data, ct = http_get(base)

@@ -21,6 +21,22 @@
   - MAS, IMDA, BI → proxy=auto, pageOptions.waitFor=2000
 
 
+#### Firecrawl v2-first configuration matrix and telemetry
+- Primary API shapes (v2):
+  - scrape: url=..., formats=["markdown","html"], pageOptions={waitFor: <ms>, timeout: 60000, includeHtml: true, parsePDF: true}, parsers=["pdf"], proxy in {auto, stealth}
+  - crawl: url=..., limit=<n>, pageOptions={waitFor: <ms>, timeout: 60000, includeHtml: true, parsePDF: true}, proxy, poll_interval=1, timeout=120
+- Graceful fallback to legacy signatures only on TypeError; record path in telemetry notes as v2|legacy
+- Per-authority wait/proxy policy:
+  - Stealth + 5000ms: ASEAN, OJK, BNM, MCMC, DICT
+  - Auto + 2000ms: MAS, IMDA, BI, SC, PDPC, BOT, BSP, SBV, MIC, KOMINFO
+- Telemetry CSVs (data/output/validation/latest/):
+  - provider_events.csv: [authority, url, provider, status_code_or_error, waitFor_ms, proxy_mode, timestamp, notes]
+  - provider_usage_sources.csv: [authority, url, fc_crawl_count, fc_scrape_count, http_fallback_count]
+- Validation protocol:
+  - Phase 1 (recent): scripts/ingest_sources.py --limit-per-source 3 --max-depth 1; rerun idempotency → items_new=0
+  - Phase 2 (backfill): app/ingest.py run --since=2024-01-01; rerun idempotency → items_new=0
+
+
 ### Limits
 - Max links discovered per source: 8
 - Max links processed per source: 5
