@@ -45,7 +45,8 @@
   },
   "selectors": {
     "MAS": ["article .article-content", ".article-content", "main", "article"],
-    "IMDA": [".rich-text", ".content", "article", "main"]
+    "IMDA": [".rich-text", ".content", "article", "main"],
+    "KOMINFO": ["article", ".post", ".entry", ".news__item", ".entry-content"]
   },
   "denySelectors": ["header", "nav", "footer", ".breadcrumb", ".share", ".social", ".related", ".tags"],
   "startUrls": [
@@ -58,7 +59,7 @@
     {"url": "https://www.pdpc.gov.sg/News-and-Events", "label": "PDPC", "render": false},
     {"url": "https://www.bi.go.id/id/publikasi/ruang-media/news-release/", "label": "BI", "render": true},
     {"url": "https://www.ojk.go.id/id/berita-dan-kegiatan/siaran-pers", "label": "OJK", "render": true},
-    {"url": "https://kominfo.go.id/siaran-pers", "label": "KOMINFO", "render": true},
+    {"url": "https://kominfo.go.id/siaran-pers", "label": "KOMINFO", "render": true, "proxy": "stealth", "pageOptions": {"waitFor": 15000}},
 {"url": "https://kominfo.go.id/feed", "label": "KOMINFO", "render": true, "proxy": "stealth", "pageOptions": {"waitFor": 12000}},
     {"url": "https://www.bot.or.th/en/news-and-media.html", "label": "BOT", "render": true},
     {"url": "https://www.bot.or.th/en/news-and-media/news.html", "label": "BOT", "render": true},

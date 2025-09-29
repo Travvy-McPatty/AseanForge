@@ -64,5 +64,5 @@ regional_gov:
   - { name: "DICT (Philippines) Press Releases", url: "https://dict.gov.ph/category/press-releases/", category: "Official Data", max_depth: 1, limit: 10 }
   - { name: "MIC (Vietnam) News", url: "https://english.mic.gov.vn/Pages/TinTuc/tintuckinhte.aspx", category: "Official Data", max_depth: 1, limit: 10 }
   - { name: "SBV (Vietnam) English Portal", url: "https://sbv.gov.vn/en/", category: "Official Data", max_depth: 1, limit: 10 }
-  - { name: "KOMINFO (Indonesia) Press", url: "https://kominfo.go.id/siaran-pers", category: "Official Data", max_depth: 1, limit: 10 }
+  - { name: "KOMINFO (Indonesia) Press", url: "https://kominfo.go.id/siaran-pers", category: "Official Data", max_depth: 2, limit: 10 }
   - { name: "KOMINFO (Indonesia) Feed", url: "https://kominfo.go.id/feed", category: "Official Data", max_depth: 1, limit: 10 }
