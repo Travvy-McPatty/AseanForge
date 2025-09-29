@@ -1,6 +1,12 @@
 import os
 import argparse
 import json
+import time
+import csv
+import re
+from urllib.request import urlopen, Request
+
+
 from datetime import datetime
 from urllib.parse import urlparse
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -34,6 +40,10 @@ DEFAULT_CHUNK_CHARS = int(os.getenv("CHUNK_CHARS", str(600 * 4)))
 DEFAULT_OVERLAP_CHARS = int(os.getenv("CHUNK_OVERLAP_CHARS", str(100 * 4)))
 # Lower default min length to be more permissive; override via env
 MIN_PAGE_CHARS = int(os.getenv("MIN_PAGE_CHARS", "100"))
+# Crawling behavior defaults (polite & shallow)
+WAIT_MS_DEFAULT = int(os.getenv("FIRECRAWL_WAIT_MS", "2000"))  # ms before parsing
+CRAWL_DELAY_MS = int(os.getenv("CRAWL_DELAY_MS", "1200"))
+
 INGEST_DEBUG = os.getenv("INGEST_DEBUG", "0").lower() in ("1","true","yes","y")
 SOURCE_FILTER = os.getenv("SOURCE_FILTER")  # comma-separated substrings matched against entry name or url (case-insensitive)
 
@@ -85,6 +95,82 @@ def load_sources_config(path: str = DEFAULT_CONFIG) -> List[Dict[str, Any]]:
     return entries
 
 
+def authority_from_entry(entry: Dict[str, Any]) -> Optional[str]:
+    name = (entry.get("name") or "").upper()
+    url = entry.get("url") or ""
+    dom = urlparse(url).netloc.lower() if url else ""
+    for key, markers in {
+        "ASEAN": ["ASEAN", "asean.org"],
+        "OJK": ["OJK", "ojk.go.id"],
+        "IMDA": ["IMDA", "imda.gov.sg"],
+        "MAS": ["MAS", "mas.gov.sg"],
+        "BI": [" BI ", " BI-", "bi.go.id"],
+    }.items():
+        if any(m in name or (dom and m in dom) for m in markers):
+            return key.strip()
+    return None
+
+
+def resolve_fc_proxy_and_wait_ms(entry: Dict[str, Any]) -> Tuple[str, int]:
+    auth = authority_from_entry(entry) or ""
+    if auth in ("ASEAN", "OJK"):
+        return ("stealth", 5000)
+    # defaults for others incl. IMDA, MAS, BI
+    return ("auto", WAIT_MS_DEFAULT)
+
+
+
+
+def authority_from_url(url: Optional[str]) -> Optional[str]:
+    if not url:
+        return None
+    dom = urlparse(url).netloc.lower()
+    if "asean.org" in dom:
+        return "ASEAN"
+    if "mas.gov.sg" in dom:
+        return "MAS"
+    if "imda.gov.sg" in dom:
+        return "IMDA"
+    if "ojk.go.id" in dom:
+        return "OJK"
+    if "bi.go.id" in dom:
+        return "BI"
+    return None
+
+
+def write_provider_event(authority: Optional[str], url: str, mode: str, provider: str, status: str) -> None:
+    try:
+        out_dir = os.path.join("data", "output", "validation", "latest")
+        os.makedirs(out_dir, exist_ok=True)
+        path = os.path.join(out_dir, "provider_events.csv")
+        exists = os.path.exists(path)
+        with open(path, "a", encoding="utf-8", newline="") as f:
+            w = csv.writer(f)
+            if not exists:
+                w.writerow(["authority", "url", "mode", "provider", "status", "ts"])
+            w.writerow([authority or "", url, mode, provider, status, datetime.utcnow().isoformat()])
+    except Exception:
+        pass
+
+def http_fetch_markdown(url: str, timeout: int = 20) -> Tuple[str, Dict[str, Any]]:
+    try:
+        req = Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; AseanForge/1.0)"})
+        with urlopen(req, timeout=timeout) as resp:
+            data = resp.read()
+        text = data.decode("utf-8", errors="ignore")
+        # naive tag strip to yield a markdown-like plain text
+        stripped = re.sub(r"<script[\s\S]*?</script>", " ", text, flags=re.I)
+        stripped = re.sub(r"<style[\s\S]*?</style>", " ", stripped, flags=re.I)
+        stripped = re.sub(r"<[^>]+>", " ", stripped)
+        stripped = re.sub(r"\s+", " ", stripped).strip()
+        meta = {"provider": "http", "fetched_at": datetime.utcnow().isoformat()}
+        return stripped, meta
+    except Exception as e:
+        if INGEST_DEBUG:
+            print(f"      [debug] HTTP fallback failed for {url}: {e}")
+        return "", {}
+
+
 def extract_metadata(item: Dict[str, Any]) -> Tuple[str, str, Optional[str], Optional[datetime]]:
     """Return (url, title, domain, published_at)
     item is one entry from Firecrawl crawl results: {markdown, html?, metadata}
@@ -117,9 +203,10 @@ def extract_metadata(item: Dict[str, Any]) -> Tuple[str, str, Optional[str], Opt
             pub_dt = None
     return url, title, domain, pub_dt
 
-def ensure_url_and_markdown(fc: Firecrawl, item: Any) -> Tuple[Optional[str], Optional[str], Dict[str, Any]]:
-    """Try to resolve a URL and markdown for a crawl item.
-    Returns (url, markdown, metadata_dict)."""
+def ensure_url_and_markdown(fc: Firecrawl, item: Any, page_options: Dict[str, Any], proxy_mode: str) -> Tuple[Optional[str], Optional[str], Dict[str, Any]]:
+    """Resolve a URL and markdown for a crawl item using Firecrawl v2 first, then HTTP fallback.
+    Returns (url, markdown, metadata_dict). metadata may include _fetched_via: fc_scrape|http
+    """
     meta: Dict[str, Any] = {}
     url: Optional[str] = None
     markdown: Optional[str] = None
@@ -133,20 +220,35 @@ def ensure_url_and_markdown(fc: Firecrawl, item: Any) -> Tuple[Optional[str], Op
             markdown = item.get("markdown") or item.get("content")
         elif isinstance(item, str) and item.startswith("http"):
             url = item
-        # If we lack markdown but have a URL, try a direct scrape
+        # If we lack markdown but have a URL, try a direct scrape (v2-first)
         if url and not markdown:
             try:
-                scrape = fc.scrape(url=url, formats=["markdown"])
-                # firecrawl-py may return an object with attributes
+                try:
+                    scrape = fc.scrape(url=url, formats=["markdown", "html"], pageOptions=page_options, parsers=["pdf"], proxy=proxy_mode)
+                except TypeError as te:
+                    if "pageOptions" in str(te) or "proxy" in str(te) or "parsers" in str(te):
+                        scrape = fc.scrape(url, formats=["markdown", "html"])  # legacy
+                    else:
+                        raise
                 data = getattr(scrape, "data", {}) or {}
                 markdown = getattr(scrape, "markdown", "") or (data.get("markdown", "") if isinstance(data, dict) else "")
                 md2 = (data.get("metadata") if isinstance(data, dict) else {}) or {}
                 meta = {**md2, **meta}
+                if markdown:
+                    meta["_fetched_via"] = "fc_scrape"
             except Exception as se:
                 if INGEST_DEBUG:
                     print(f"      [debug] scrape failed for {url}: {se}")
-    except Exception:
-        pass
+        # HTTP fallback if still no markdown
+        if url and not markdown:
+            md_http, md_meta = http_fetch_markdown(url)
+            if md_http:
+                markdown = md_http
+                meta = {**meta, **md_meta}
+                meta["_fetched_via"] = "http"
+    except Exception as e:
+        if INGEST_DEBUG:
+            print(f"      [debug] ensure_url_and_markdown error: {e}")
     return url, markdown, (meta or {})
 
 
@@ -272,11 +374,44 @@ def run_ingest(config_path: str, dry_run: bool = False, limit_per_source: int = 
                 "snippets_total": 0,
                 "db_pages_inserted": 0,
                 "db_chunks_inserted": 0,
+                # provider tallies for diagnostics
+                "provider_fc_crawl": 0,
+                "provider_fc_scrape": 0,
+                "provider_http": 0,
             }
+        proxy_mode, wait_ms = resolve_fc_proxy_and_wait_ms(entry)
+        page_options = {"waitFor": wait_ms, "timeout": 60000, "includeHtml": True, "parsePDF": True}
+
         print(f"[{datetime.utcnow().isoformat()}] Crawl: {name} ({section}) {base} limit={lp} depth={mdp}")
         try:
-            docs = fc.crawl(url=base, limit=lp)
+            # Firecrawl v2 crawl preferred; fall back to legacy signatures if needed
+            try:
+                docs = fc.crawl(
+                    url=base,
+                    limit=lp,
+                    pageOptions=page_options,
+                    proxy=proxy_mode,
+                    poll_interval=1,
+                    timeout=120,
+                )
+            except TypeError as te:
+                if "pageOptions" in str(te):
+                    try:
+                        # legacy simpler signature
+                        docs = fc.crawl(base, limit=lp)
+                    except Exception:
+                        # final fallback: minimal kwargs without pageOptions
+                        docs = fc.crawl(url=base, limit=lp)
+                else:
+                    # Some SDK builds accept a dict payload
+                    docs = fc.crawl({"url": base, "limit": lp})
             # SDK: may return dict with data, or object with .data
+            # polite delay between API calls
+            try:
+                time.sleep(CRAWL_DELAY_MS / 1000.0)
+            except Exception:
+                pass
+
             items = []
             if isinstance(docs, dict) and "data" in docs:
                 items = docs.get("data") or []
@@ -286,19 +421,60 @@ def run_ingest(config_path: str, dry_run: bool = False, limit_per_source: int = 
                 items = docs
             else:
                 items = []
+            if items:
+                per_source[key]["provider_fc_crawl"] += 1
+                print(f"    FETCH_PROVIDER=firecrawl mode=crawl url={base}")
+                try:
+                    write_provider_event(authority_from_entry(entry) or authority_from_url(base), base, "crawl", "firecrawl", "success")
+                except Exception:
+                    pass
+
 
             # Always attempt to include a direct scrape of the base URL as the first candidate
             if base:
                 try:
-                    s = fc.scrape(url=base, formats=["markdown"])
+                    try:
+                        s = fc.scrape(
+                            url=base,
+                            formats=["markdown", "html"],
+                            pageOptions=page_options,
+                            parsers=["pdf"],
+                            proxy=proxy_mode,
+                        )
+                    except TypeError as te:
+                        if "pageOptions" in str(te) or "proxy" in str(te) or "parsers" in str(te):
+                            s = fc.scrape(base, formats=["markdown", "html"])  # legacy
+                        else:
+                            raise
                     data = getattr(s, "data", {}) or {}
                     md = getattr(s, "markdown", "") or (data.get("markdown", "") if isinstance(data, dict) else "")
                     meta_b = (data.get("metadata") if isinstance(data, dict) else {}) or {}
                     if md:
                         base_item = {"markdown": md, "metadata": meta_b, "url": base}
                         items = [base_item] + (items or [])
-                        if INGEST_DEBUG or dry_run:
-                            print("    [debug] prepended direct scrape of base URL")
+                        per_source[key]["provider_fc_scrape"] += 1
+                        print(f"    FETCH_PROVIDER=firecrawl mode=scrape url={base}")
+                        try:
+                            write_provider_event(authority_from_entry(entry) or authority_from_url(base), base, "scrape", "firecrawl", "success")
+                        except Exception:
+                            pass
+                    else:
+                        # HTTP fallback for base if Firecrawl returns empty
+                        md_http, _ = http_fetch_markdown(base)
+                        if md_http:
+                            base_item = {"markdown": md_http, "metadata": {}, "url": base}
+                            items = [base_item] + (items or [])
+                            per_source[key]["provider_http"] += 1
+                            print(f"    FETCH_PROVIDER=http mode=scrape url={base}")
+                            try:
+                                write_provider_event(authority_from_entry(entry) or authority_from_url(base), base, "scrape", "http", "fallback")
+                            except Exception:
+                                pass
+                    # polite delay
+                    try:
+                        time.sleep(CRAWL_DELAY_MS / 1000.0)
+                    except Exception:
+                        pass
                 except Exception as se:
                     if INGEST_DEBUG or dry_run:
                         print(f"    [debug] base scrape failed: {se}")
@@ -306,7 +482,7 @@ def run_ingest(config_path: str, dry_run: bool = False, limit_per_source: int = 
             for it in items:
                 per_source[key]["pages_considered"] += 1
                 # Resolve URL and markdown; attempt a direct scrape if crawl item lacks content
-                url0, markdown, meta = ensure_url_and_markdown(fc, it)
+                url0, markdown, meta = ensure_url_and_markdown(fc, it, page_options, proxy_mode)
                 edict = it if isinstance(it, dict) else {}
                 if isinstance(edict, dict):
                     em = dict(edict.get("metadata") or {})
@@ -317,6 +493,22 @@ def run_ingest(config_path: str, dry_run: bool = False, limit_per_source: int = 
                         edict["markdown"] = markdown
                     if url0 and not edict.get("url"):
                         edict["url"] = url0
+                # Provider attribution for fallback fetches
+                via = (meta or {}).get("_fetched_via")
+                if via == "fc_scrape" and url0:
+                    per_source[key]["provider_fc_scrape"] += 1
+                    print(f"    FETCH_PROVIDER=firecrawl mode=scrape url={url0}")
+                    try:
+                        write_provider_event(authority_from_entry(entry) or authority_from_url(url0), url0, "scrape", "firecrawl", "success")
+                    except Exception:
+                        pass
+                elif via == "http" and url0:
+                    per_source[key]["provider_http"] += 1
+                    print(f"    FETCH_PROVIDER=http mode=scrape url={url0}")
+                    try:
+                        write_provider_event(authority_from_entry(entry) or authority_from_url(url0), url0, "scrape", "http", "fallback")
+                    except Exception:
+                        pass
                 meta_url, meta_title, domain, published_at = extract_metadata(edict)
 
                 # Diagnostics
@@ -353,6 +545,7 @@ def run_ingest(config_path: str, dry_run: bool = False, limit_per_source: int = 
                 print(f"  - {meta_title or meta_url} | {domain} | snippets {snippet_count}")
 
                 # Add accepted chunks to vector store (embeddings) if available
+
                 if vs is not None:
                     try:
                         metadatas = [{
@@ -391,7 +584,7 @@ def run_ingest(config_path: str, dry_run: bool = False, limit_per_source: int = 
             print(f"[warn] {base}: {e}")
 
     done_msg = (
-        f"[{datetime.utcnow().isoformat()}] Ingest done. pages_added={total_pages} chunks_added={total_chunks} dry_run={dry_run}"
+        f"[{datetime.utcnow().isoformat()}] Ingest done. pages_added={total_pages} chunks_added={total_chunks} items_new={total_pages} dry_run={dry_run}"
     )
     print(done_msg)
 
@@ -409,6 +602,23 @@ def run_ingest(config_path: str, dry_run: bool = False, limit_per_source: int = 
         with open("data/output/ingestion_summary.json", "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2)
         print("Wrote summary: data/output/ingestion_summary.json")
+        # Also write a provider-usage CSV snapshot for validation
+        try:
+            out_dir = os.path.join("data", "output", "validation", "latest")
+            os.makedirs(out_dir, exist_ok=True)
+            csv_path = os.path.join(out_dir, "provider_usage_sources.csv")
+            with open(csv_path, "w", encoding="utf-8", newline="") as f:
+                w = csv.writer(f)
+                w.writerow(["name", "url", "fc_crawl", "fc_scrape", "http_fallback"])
+                for s in per_source.values():
+                    w.writerow([
+                        s.get("name"), s.get("url"),
+                        s.get("provider_fc_crawl", 0), s.get("provider_fc_scrape", 0), s.get("provider_http", 0)
+                    ])
+            print(f"Wrote provider usage CSV: {csv_path}")
+        except Exception as se:
+            print(f"[warn] failed to write provider usage CSV: {se}")
+
     except Exception as se:
         print(f"[warn] failed to write ingestion summary: {se}")
 
