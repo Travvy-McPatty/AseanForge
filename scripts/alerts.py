@@ -36,11 +36,11 @@ def load_rules(path: str) -> List[Dict]:
 def fetch_events(db_url: str, window_hours: int) -> List[Dict]:
     sql = (
         "COPY ("
-        " SELECT e.id, to_char(e.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS ts,"
-        " e.authority, e.title, e.url, e.summary_en, d.source_url, d.content"
-        " FROM events e LEFT JOIN documents d ON d.event_id = e.id"
-        f" WHERE e.created_at >= NOW() - INTERVAL '{window_hours} hours'"
-        " ORDER BY e.created_at DESC"
+        " SELECT e.event_id, to_char(e.access_ts AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS ts,"
+        " e.authority, e.title, e.url, e.summary_en, d.source_url, d.clean_text"
+        " FROM events e LEFT JOIN documents d ON d.event_id = e.event_id"
+        f" WHERE e.access_ts >= NOW() - INTERVAL '{window_hours} hours'"
+        " ORDER BY e.access_ts DESC"
         ") TO STDOUT WITH (FORMAT CSV, DELIMITER '|', HEADER TRUE)"
     )
     cmd = ["psql", db_url, "-v", "ON_ERROR_STOP=1", "-c", sql]
@@ -98,7 +98,38 @@ def run_alerts(rules_path: str, window_hours: int) -> Tuple[int, Dict[str, int]]
         )
     alerts.sort(key=sort_key, reverse=True)
 
-    # Write CSV
+    # If empty, adaptively widen window
+    effective_hours = window_hours
+    fallback_applied = False
+    if not alerts and window_hours == 168:
+        for nh in (336, 720):  # 14d, 30d
+            events = fetch_events(db_url, nh)
+            alerts = []
+            seen.clear()
+            for ev in events:
+                ev_id = ev.get("id")
+                auth = (ev.get("authority") or "").upper()
+                hay = " ".join([
+                    ev.get("title") or "",
+                    ev.get("summary_en") or "",
+                    ev.get("content") or "",
+                ]).lower()
+                for rule in rules:
+                    if auth not in rule["authorities"]:
+                        continue
+                    if any(k in hay for k in rule["match"]):
+                        key = (rule["name"], ev_id)
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        alerts.append((rule["name"], ev))
+            alerts.sort(key=sort_key, reverse=True)
+            if alerts:
+                effective_hours = nh
+                fallback_applied = True
+                break
+
+    # Write CSV (final alerts set)
     written = 0
     with open(out_path, "w", encoding="utf-8", newline="") as fh:
         w = csv.writer(fh, delimiter=DELIM)
@@ -118,13 +149,14 @@ def run_alerts(rules_path: str, window_hours: int) -> Tuple[int, Dict[str, int]]
 
     with open(summary_path, "w", encoding="utf-8") as fh:
         fh.write(f"[{iso_utc_now()}] Alerts run completed\n")
-        fh.write(f"Window: last {window_hours} hours\n")
+        fh.write(f"Window: last {effective_hours} hours\n")
+        fh.write(f"Effective window: {effective_hours} hours (fallback applied: {'yes' if fallback_applied else 'no'})\n")
         fh.write(f"Total events scanned: {len(events)}\n")
         fh.write(f"Total alerts generated: {written}\n\n")
         fh.write("Breakdown by rule:\n")
         for k in sorted(by_rule.keys()):
             fh.write(f"{k}: {by_rule[k]} alerts\n")
-    print(f"Generated {written} alerts across {len(rules)} rules → deliverables/alerts_latest.csv")
+    print(f"Generated {written} alerts across {len(rules)} rules → deliverables/alerts_latest.csv (effective window {effective_hours}h)")
     return written, by_rule
 
 

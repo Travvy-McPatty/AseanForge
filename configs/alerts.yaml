@@ -2,10 +2,23 @@ rules:
   - name: MAS_Sanctions
     match: ["sanction", "AML", "counter-terrorism", "anti-money laundering"]
     authorities: ["MAS", "SC", "PDPC"]
+
   - name: AI_Policy
-    match: ["artificial intelligence", "AI Act", "foundation model", "machine learning"]
+    match: ["artificial intelligence", "AI Act", "foundation model", "machine learning", "AI Governance", "AI Ethics", "AI Safety", "Model Evaluation"]
     authorities: ["ASEAN", "IMDA", "MIC", "DICT"]
+
   - name: Data_Privacy
-    match: ["PDPA", "data protection", "privacy breach", "personal data"]
+    match: ["PDPA", "data protection", "privacy breach", "personal data", "Cross-border data", "Localization"]
     authorities: ["PDPC", "IMDA", "SC"]
 
+  - name: Digital_Competition
+    match: ["Digital competition", "Platform regulation", "Interoperability", "antitrust", "market dominance"]
+    authorities: ["ASEAN", "SC", "MAS", "IMDA"]
+
+  - name: Cybersecurity
+    match: ["Cybersecurity", "Critical infrastructure", "Incident reporting", "data breach", "ransomware"]
+    authorities: ["ASEAN", "IMDA", "PDPC", "MAS", "SC"]
+
+  - name: Fintech
+    match: ["Fintech", "Stablecoin", "Virtual asset", "Digital bank", "Open banking", "cryptocurrency", "payment token"]
+    authorities: ["MAS", "SC", "BSP", "BOT", "OJK", "BI"]
