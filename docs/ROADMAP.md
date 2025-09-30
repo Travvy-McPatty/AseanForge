@@ -99,3 +99,23 @@
 - [ ] BNM (Malaysia) unlock — awaiting Firecrawl vendor response on 403/stealth configuration
 - [ ] KOMINFO (Indonesia) unlock — awaiting Firecrawl vendor response on zero-content yield
 - Vendor packet: `data/output/validation/latest/firecrawl_vendor_packet.md`
+
+
+### Alerts & Samplers Go-Live — Freshness Sweep
+
+- **Date**: 2025-09-30T08:38:12Z
+- **Events**: 168 (7 new from freshness sweep)
+- **Documents**: 96
+- **Items added (broad sweep)**: 7 (limit-per-source=20, max-depth=1, MIN_PAGE_CHARS=200)
+- **Items added (PDF emphasis)**: 0 (limit-per-source=60, max-depth=2)
+- **Idempotency verified**: items_new=0 on rerun ✓
+- **Sampler windows**:
+  - 24h: 118 events (effective: 72h; fallback: yes)
+  - 7d: 168 events (effective: 7d; fallback: no)
+- **Alert window**: 168h (effective: 168h; fallback: no)
+- **Alerts generated**: 4 alerts across 6 rules (AI_Policy: 1, Cybersecurity: 1, Data_Privacy: 1, Fintech: 1)
+- **Snapshot**: deliverables/freshness_sweep_snapshot_20250930_083812.zip
+- **Authorities**: 13/15 working (BNM, KOMINFO pending vendor response)
+- **Quality gates**: Relaxed (MIN_PAGE_CHARS=200; 404 + dedup only)
+- **Schema fixes**: Updated samplers/alerts to use `events.access_ts` and `documents.clean_text` (was `created_at`/`content`)
+- **Cost guardrail**: not hit
