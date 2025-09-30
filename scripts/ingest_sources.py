@@ -39,7 +39,7 @@ DEFAULT_CONFIG = "config/sources.yaml"
 DEFAULT_CHUNK_CHARS = int(os.getenv("CHUNK_CHARS", str(600 * 4)))
 DEFAULT_OVERLAP_CHARS = int(os.getenv("CHUNK_OVERLAP_CHARS", str(100 * 4)))
 # Lower default min length to be more permissive; override via env
-MIN_PAGE_CHARS = int(os.getenv("MIN_PAGE_CHARS", "100"))
+MIN_PAGE_CHARS = int(os.getenv("MIN_PAGE_CHARS", "700"))
 # Crawling behavior defaults (polite & shallow)
 WAIT_MS_DEFAULT = int(os.getenv("FIRECRAWL_WAIT_MS", "2000"))  # ms before parsing
 CRAWL_DELAY_MS = int(os.getenv("CRAWL_DELAY_MS", "1200"))
@@ -101,10 +101,20 @@ def authority_from_entry(entry: Dict[str, Any]) -> Optional[str]:
     dom = urlparse(url).netloc.lower() if url else ""
     for key, markers in {
         "ASEAN": ["ASEAN", "asean.org"],
-        "OJK": ["OJK", "ojk.go.id"],
-        "IMDA": ["IMDA", "imda.gov.sg"],
         "MAS": ["MAS", "mas.gov.sg"],
-        "BI": [" BI ", " BI-", "bi.go.id"],
+        "IMDA": ["IMDA", "imda.gov.sg"],
+        "PDPC": ["PDPC", "pdpc.gov.sg"],
+        "OJK": ["OJK", "ojk.go.id"],
+        "BI": [" BI ", " BI-", "bi.go.id", "BANK INDONESIA"],
+        "KOMINFO": ["KOMINFO", "kominfo.go.id"],
+        "BOT": ["BOT", "bot.or.th"],
+        "BNM": ["BNM", "bnm.gov.my"],
+        "SC": [" SC ", "sc.com.my", "SECURITIES COMMISSION MALAYSIA"],
+        "MCMC": ["MCMC", "mcmc.gov.my"],
+        "BSP": ["BSP", "bsp.gov.ph"],
+        "DICT": ["DICT", "dict.gov.ph"],
+        "MIC": ["MIC", "mic.gov.vn"],
+        "SBV": ["SBV", "sbv.gov.vn"],
     }.items():
         if any(m in name or (dom and m in dom) for m in markers):
             return key.strip()
@@ -113,9 +123,13 @@ def authority_from_entry(entry: Dict[str, Any]) -> Optional[str]:
 
 def resolve_fc_proxy_and_wait_ms(entry: Dict[str, Any]) -> Tuple[str, int]:
     auth = authority_from_entry(entry) or ""
-    if auth in ("ASEAN", "OJK"):
+    # Escalate stubborn authorities per spec
+    if auth in ("BNM", "KOMINFO"):
+        return ("stealth", 12000)
+    # High-security but generally OK with 5s
+    if auth in ("ASEAN", "OJK", "MCMC", "DICT"):
         return ("stealth", 5000)
-    # defaults for others incl. IMDA, MAS, BI
+    # defaults for others incl. IMDA, MAS, BI, SC, PDPC, BOT, BSP, SBV, MIC
     return ("auto", WAIT_MS_DEFAULT)
 
 
@@ -135,10 +149,29 @@ def authority_from_url(url: Optional[str]) -> Optional[str]:
         return "OJK"
     if "bi.go.id" in dom:
         return "BI"
+    if "bnm.gov.my" in dom:
+        return "BNM"
+    if "kominfo.go.id" in dom:
+        return "KOMINFO"
+    if "sc.com.my" in dom:
+        return "SC"
+    if "mcmc.gov.my" in dom:
+        return "MCMC"
+    if "bsp.gov.ph" in dom:
+        return "BSP"
+    if "dict.gov.ph" in dom:
+        return "DICT"
+    if "mic.gov.vn" in dom:
+        return "MIC"
+    if "sbv.gov.vn" in dom:
+        return "SBV"
     return None
 
 
-def write_provider_event(authority: Optional[str], url: str, mode: str, provider: str, status: str) -> None:
+def write_provider_event(authority: Optional[str], url: str, provider: str, status_code_or_error: str, wait_ms: int, proxy_mode: str, notes: str = "") -> None:
+    """Append a provider event to CSV with normalized schema.
+    Columns: [authority, url, provider, status_code_or_error, waitFor_ms, proxy_mode, timestamp, notes]
+    """
     try:
         out_dir = os.path.join("data", "output", "validation", "latest")
         os.makedirs(out_dir, exist_ok=True)
@@ -147,10 +180,77 @@ def write_provider_event(authority: Optional[str], url: str, mode: str, provider
         with open(path, "a", encoding="utf-8", newline="") as f:
             w = csv.writer(f)
             if not exists:
-                w.writerow(["authority", "url", "mode", "provider", "status", "ts"])
-            w.writerow([authority or "", url, mode, provider, status, datetime.utcnow().isoformat()])
+                w.writerow(["authority", "url", "provider", "status_code_or_error", "waitFor_ms", "proxy_mode", "timestamp", "notes"])
+            w.writerow([authority or "", url, provider, status_code_or_error, wait_ms, proxy_mode, datetime.utcnow().isoformat(), notes])
     except Exception:
         pass
+
+
+def write_fc_error(domain: str, url: str, status: str, error_msg: str) -> None:
+    """Append a Firecrawl error row for stubborn/empty cases.
+    Columns: [domain, url, status, error]
+    """
+    try:
+        out_dir = os.path.join("data", "output", "validation", "latest")
+        os.makedirs(out_dir, exist_ok=True)
+        path = os.path.join(out_dir, "fc_errors.csv")
+        exists = os.path.exists(path)
+        with open(path, "a", encoding="utf-8", newline="") as f:
+            w = csv.writer(f)
+            if not exists:
+                w.writerow(["domain", "url", "status", "error"])
+            w.writerow([domain, url, status, (error_msg or "").strip()[:500]])
+    except Exception:
+        pass
+
+
+def write_quality_drop(authority: Optional[str], url: str, reason: str, metric: str = "") -> None:
+    """Log pages skipped by quality gates for reporting.
+    Columns: [authority, url, reason, metric]
+    """
+    try:
+        out_dir = os.path.join("data", "output", "validation", "latest")
+        os.makedirs(out_dir, exist_ok=True)
+        path = os.path.join(out_dir, "quality_drops.csv")
+        exists = os.path.exists(path)
+        with open(path, "a", encoding="utf-8", newline="") as f:
+            w = csv.writer(f)
+            if not exists:
+                w.writerow(["authority", "url", "reason", "metric"])
+            w.writerow([authority or "", url, reason, metric])
+    except Exception:
+        pass
+
+
+def ascii_ratio(text: str) -> float:
+    if not text:
+        return 0.0
+    total = sum(1 for ch in text if not ch.isspace())
+    if total == 0:
+        return 0.0
+    ascii_count = sum(1 for ch in text if ord(ch) < 128 and not ch.isspace())
+    return ascii_count / total
+
+
+def is_link_farm_markdown(md: str) -> float:
+    """Estimate fraction of non-whitespace chars within markdown links and bullets."""
+    if not md:
+        return 0.0
+    nonws = ''.join(ch for ch in md if not ch.isspace())
+    if not nonws:
+        return 0.0
+    # Link text portions inside [] and list markers
+    link_texts = re.findall(r"\[([^\]]{1,200})\]\((http[^)]+)\)", md, flags=re.I)
+    link_chars = sum(len(t[0]) for t in link_texts)
+    bullet_lines = [ln for ln in md.splitlines() if ln.strip().startswith(('-','*','•'))]
+    bullet_chars = sum(len(''.join(ch for ch in ln if not ch.isspace())) for ln in bullet_lines)
+    return min(1.0, (link_chars + bullet_chars) / max(1, len(nonws)))
+
+
+def contains_not_found(title: Optional[str], md: str) -> bool:
+    hay = ((title or "") + "\n" + (md or "")).lower()
+    phrases = ["not found", "404", "page no longer exists", "this page no longer exists"]
+    return any(p in hay for p in phrases)
 
 def http_fetch_markdown(url: str, timeout: int = 20) -> Tuple[str, Dict[str, Any]]:
     try:
@@ -224,7 +324,7 @@ def ensure_url_and_markdown(fc: Firecrawl, item: Any, page_options: Dict[str, An
         if url and not markdown:
             try:
                 try:
-                    scrape = fc.scrape(url=url, formats=["markdown", "html"], pageOptions=page_options, parsers=["pdf"], proxy=proxy_mode)
+                    scrape = fc.scrape(url=url, formats=["markdown", "html"], pageOptions=page_options, parsers=["pdf"], proxy=proxy_mode, maxAge=172800000)
                 except TypeError as te:
                     if "pageOptions" in str(te) or "proxy" in str(te) or "parsers" in str(te):
                         scrape = fc.scrape(url, formats=["markdown", "html"])  # legacy
@@ -239,7 +339,32 @@ def ensure_url_and_markdown(fc: Firecrawl, item: Any, page_options: Dict[str, An
             except Exception as se:
                 if INGEST_DEBUG:
                     print(f"      [debug] scrape failed for {url}: {se}")
-        # HTTP fallback if still no markdown
+        # Retry escalation with higher wait/selectors; then HTTP fallback if still no markdown
+        if url and not markdown:
+            try:
+                auth_lbl2 = authority_from_url(url)
+                extra_kwargs = {"maxAge": 172800000}
+                if auth_lbl2 in ("BNM", "KOMINFO"):
+                    extra_kwargs["selectors"] = ["article", ".post-content", ".news-detail"]
+                    extra_kwargs["location"] = {"country": "SG", "languages": ["en-SG"]}
+                scrape2 = fc.scrape(url=url, formats=["markdown", "html"], pageOptions={**page_options, "waitFor": 12000}, parsers=["pdf"], proxy=proxy_mode, **extra_kwargs)
+                data2 = getattr(scrape2, "data", {}) or {}
+                md2 = getattr(scrape2, "markdown", "") or (data2.get("markdown", "") if isinstance(data2, dict) else "")
+                if md2:
+                    markdown = md2
+                    meta["_fetched_via"] = "fc_scrape"
+            except TypeError:
+                try:
+                    scrape2 = fc.scrape(url=url, formats=["markdown", "html"], pageOptions={**page_options, "waitFor": 12000}, parsers=["pdf"], proxy=proxy_mode, maxAge=172800000)
+                    data2 = getattr(scrape2, "data", {}) or {}
+                    md2 = getattr(scrape2, "markdown", "") or (data2.get("markdown", "") if isinstance(data2, dict) else "")
+                    if md2:
+                        markdown = md2
+                        meta["_fetched_via"] = "fc_scrape"
+                except Exception as e:
+                    write_fc_error(urlparse(url).netloc, url, "scrape_retry_error", str(e))
+            except Exception as e:
+                write_fc_error(urlparse(url).netloc, url, "scrape_error", str(e))
         if url and not markdown:
             md_http, md_meta = http_fetch_markdown(url)
             if md_http:
@@ -323,7 +448,7 @@ def ingest_from_crawl_item(session, url: str, title: str, domain: Optional[str],
     return pages_added, chunks_added
 
 
-def run_ingest(config_path: str, dry_run: bool = False, limit_per_source: int = 10, max_depth: int = 1) -> None:
+def run_ingest(config_path: str, dry_run: bool = False, limit_per_source: int = 10, max_depth: int = 1, pdf_only: bool = False) -> None:
     load_dotenv(override=True)
     entries = load_sources_config(config_path)
     # Prepare vector store for embeddings if available and not a dry run
@@ -361,10 +486,18 @@ def run_ingest(config_path: str, dry_run: bool = False, limit_per_source: int = 
         section = entry.get("section")
         lp = int(entry.get("limit", limit_per_source) or limit_per_source)
         mdp = int(entry.get("max_depth", max_depth) or max_depth)
+        # Force deeper crawl for stubborn authorities
+        try:
+            auth_lbl = authority_from_entry(entry) or authority_from_url(base)
+            if auth_lbl in ("BNM", "KOMINFO"):
+                mdp = max(mdp, 2)
+        except Exception:
+            pass
         key = base or name or f"{section}:{lp}:{mdp}"
         if key not in per_source:
             per_source[key] = {
                 "name": name,
+                "authority": authority_from_entry(entry) or authority_from_url(base),
                 "url": base,
                 "section": section,
                 "limit_used": lp,
@@ -380,11 +513,17 @@ def run_ingest(config_path: str, dry_run: bool = False, limit_per_source: int = 
                 "provider_http": 0,
             }
         proxy_mode, wait_ms = resolve_fc_proxy_and_wait_ms(entry)
-        page_options = {"waitFor": wait_ms, "timeout": 60000, "includeHtml": True, "parsePDF": True}
+        page_options = {"waitFor": wait_ms, "timeout": 60000, "includeHtml": True, "parsePDF": True, "onlyMainContent": True}
+        try:
+            if (authority_from_entry(entry) or authority_from_url(base)) in ("BNM", "KOMINFO"):
+                page_options["selectors"] = ["article", ".post-content", ".news__item", ".entry-content", ".press-release"]
+        except Exception:
+            pass
 
         print(f"[{datetime.utcnow().isoformat()}] Crawl: {name} ({section}) {base} limit={lp} depth={mdp}")
         try:
             # Firecrawl v2 crawl preferred; fall back to legacy signatures if needed
+            api_path = "v2"
             try:
                 docs = fc.crawl(
                     url=base,
@@ -393,18 +532,22 @@ def run_ingest(config_path: str, dry_run: bool = False, limit_per_source: int = 
                     proxy=proxy_mode,
                     poll_interval=1,
                     timeout=120,
+                    maxAge=172800000,
                 )
             except TypeError as te:
                 if "pageOptions" in str(te):
                     try:
                         # legacy simpler signature
                         docs = fc.crawl(base, limit=lp)
+                        api_path = "legacy"
                     except Exception:
                         # final fallback: minimal kwargs without pageOptions
                         docs = fc.crawl(url=base, limit=lp)
+                        api_path = "legacy"
                 else:
                     # Some SDK builds accept a dict payload
                     docs = fc.crawl({"url": base, "limit": lp})
+                    api_path = "legacy"
             # SDK: may return dict with data, or object with .data
             # polite delay between API calls
             try:
@@ -421,11 +564,32 @@ def run_ingest(config_path: str, dry_run: bool = False, limit_per_source: int = 
                 items = docs
             else:
                 items = []
+            if not items:
+                # Escalate retry for BNM/KOMINFO
+                auth_lbl = authority_from_entry(entry) or authority_from_url(base)
+                if auth_lbl in ("BNM", "KOMINFO"):
+                    try:
+                        docs2 = fc.crawl(url=base, limit=lp, pageOptions={**page_options, "waitFor": 12000}, proxy=proxy_mode, poll_interval=1, timeout=120, maxAge=172800000, location={"country": "SG", "languages": ["en-SG"]})
+                        if hasattr(docs2, "data"):
+                            items = getattr(docs2, "data") or []
+                        elif isinstance(docs2, dict):
+                            items = docs2.get("data") or []
+                    except TypeError:
+                        try:
+                            docs2 = fc.crawl(url=base, limit=lp, pageOptions={**page_options, "waitFor": 12000}, proxy=proxy_mode, poll_interval=1, timeout=120, maxAge=172800000)
+                            if hasattr(docs2, "data"):
+                                items = getattr(docs2, "data") or []
+                            elif isinstance(docs2, dict):
+                                items = docs2.get("data") or []
+                        except Exception as e:
+                            write_fc_error(urlparse(base).netloc, base, "crawl_retry_error", str(e))
+                    except Exception as e:
+                        write_fc_error(urlparse(base).netloc, base, "crawl_error", str(e))
             if items:
                 per_source[key]["provider_fc_crawl"] += 1
-                print(f"    FETCH_PROVIDER=firecrawl mode=crawl url={base}")
+                print(f"    FETCH_PROVIDER=firecrawl mode=crawl url={base} waitFor={page_options.get('waitFor')} proxy={proxy_mode}")
                 try:
-                    write_provider_event(authority_from_entry(entry) or authority_from_url(base), base, "crawl", "firecrawl", "success")
+                    write_provider_event(authority_from_entry(entry) or authority_from_url(base), base, "firecrawl", "ok" if items else "empty", page_options.get("waitFor", 0), proxy_mode, api_path)
                 except Exception:
                     pass
 
@@ -433,6 +597,7 @@ def run_ingest(config_path: str, dry_run: bool = False, limit_per_source: int = 
             # Always attempt to include a direct scrape of the base URL as the first candidate
             if base:
                 try:
+                    notes = "v2"
                     try:
                         s = fc.scrape(
                             url=base,
@@ -440,10 +605,12 @@ def run_ingest(config_path: str, dry_run: bool = False, limit_per_source: int = 
                             pageOptions=page_options,
                             parsers=["pdf"],
                             proxy=proxy_mode,
+                            maxAge=172800000,
                         )
                     except TypeError as te:
                         if "pageOptions" in str(te) or "proxy" in str(te) or "parsers" in str(te):
                             s = fc.scrape(base, formats=["markdown", "html"])  # legacy
+                            notes = "legacy"
                         else:
                             raise
                     data = getattr(s, "data", {}) or {}
@@ -453,23 +620,55 @@ def run_ingest(config_path: str, dry_run: bool = False, limit_per_source: int = 
                         base_item = {"markdown": md, "metadata": meta_b, "url": base}
                         items = [base_item] + (items or [])
                         per_source[key]["provider_fc_scrape"] += 1
-                        print(f"    FETCH_PROVIDER=firecrawl mode=scrape url={base}")
+                        print(f"    FETCH_PROVIDER=firecrawl mode=scrape url={base} waitFor={page_options.get('waitFor')} proxy={proxy_mode}")
                         try:
-                            write_provider_event(authority_from_entry(entry) or authority_from_url(base), base, "scrape", "firecrawl", "success")
+                            write_provider_event(authority_from_entry(entry) or authority_from_url(base), base, "firecrawl", "ok", page_options.get("waitFor", 0), proxy_mode, notes)
                         except Exception:
                             pass
                     else:
-                        # HTTP fallback for base if Firecrawl returns empty
-                        md_http, _ = http_fetch_markdown(base)
-                        if md_http:
-                            base_item = {"markdown": md_http, "metadata": {}, "url": base}
-                            items = [base_item] + (items or [])
-                            per_source[key]["provider_http"] += 1
-                            print(f"    FETCH_PROVIDER=http mode=scrape url={base}")
+                        # Retry with escalation if empty
+                        auth_lbl = authority_from_entry(entry) or authority_from_url(base)
+                        md = ""
+                        try:
+                            # Retry with higher wait and SG locale; add minimal selectors for BNM/KOMINFO
+                            extra_kwargs = {"maxAge": 172800000}
+                            if auth_lbl in ("BNM", "KOMINFO"):
+                                extra_kwargs["selectors"] = ["article", ".post-content", ".news-detail"]
+                                extra_kwargs["location"] = {"country": "SG", "languages": ["en-SG"]}
+                            s2 = fc.scrape(url=base, formats=["markdown", "html"], pageOptions={**page_options, "waitFor": 12000}, parsers=["pdf"], proxy=proxy_mode, **extra_kwargs)
+                            data2 = getattr(s2, "data", {}) or {}
+                            md = getattr(s2, "markdown", "") or (data2.get("markdown", "") if isinstance(data2, dict) else "")
+                        except TypeError:
+                            # SDK may not accept selectors/location; try without them
                             try:
-                                write_provider_event(authority_from_entry(entry) or authority_from_url(base), base, "scrape", "http", "fallback")
+                                s2 = fc.scrape(url=base, formats=["markdown", "html"], pageOptions={**page_options, "waitFor": 12000}, parsers=["pdf"], proxy=proxy_mode, maxAge=172800000)
+                                data2 = getattr(s2, "data", {}) or {}
+                                md = getattr(s2, "markdown", "") or (data2.get("markdown", "") if isinstance(data2, dict) else "")
+                            except Exception:
+                                md = ""
+                        except Exception:
+                            md = ""
+                        if md:
+                            base_item = {"markdown": md, "metadata": {}, "url": base}
+                            items = [base_item] + (items or [])
+                            per_source[key]["provider_fc_scrape"] += 1
+                            print(f"    FETCH_PROVIDER=firecrawl mode=scrape url={base} waitFor=12000 proxy={proxy_mode}")
+                            try:
+                                write_provider_event(authority_from_entry(entry) or authority_from_url(base), base, "firecrawl", "ok", 12000, proxy_mode, "retry")
                             except Exception:
                                 pass
+                        else:
+                            # HTTP fallback for base if Firecrawl returns empty
+                            md_http, _ = http_fetch_markdown(base)
+                            if md_http:
+                                base_item = {"markdown": md_http, "metadata": {}, "url": base}
+                                items = [base_item] + (items or [])
+                                per_source[key]["provider_http"] += 1
+                                print(f"    FETCH_PROVIDER=http mode=scrape url={base} waitFor={page_options.get('waitFor')} proxy={proxy_mode}")
+                                try:
+                                    write_provider_event(authority_from_entry(entry) or authority_from_url(base), base, "http", "fallback", page_options.get("waitFor", 0), proxy_mode, "")
+                                except Exception:
+                                    pass
                     # polite delay
                     try:
                         time.sleep(CRAWL_DELAY_MS / 1000.0)
@@ -497,16 +696,16 @@ def run_ingest(config_path: str, dry_run: bool = False, limit_per_source: int = 
                 via = (meta or {}).get("_fetched_via")
                 if via == "fc_scrape" and url0:
                     per_source[key]["provider_fc_scrape"] += 1
-                    print(f"    FETCH_PROVIDER=firecrawl mode=scrape url={url0}")
+                    print(f"    FETCH_PROVIDER=firecrawl mode=scrape url={url0} waitFor={page_options.get('waitFor')} proxy={proxy_mode}")
                     try:
-                        write_provider_event(authority_from_entry(entry) or authority_from_url(url0), url0, "scrape", "firecrawl", "success")
+                        write_provider_event(authority_from_entry(entry) or authority_from_url(url0), url0, "firecrawl", "ok", page_options.get("waitFor", 0), proxy_mode, "")
                     except Exception:
                         pass
                 elif via == "http" and url0:
                     per_source[key]["provider_http"] += 1
-                    print(f"    FETCH_PROVIDER=http mode=scrape url={url0}")
+                    print(f"    FETCH_PROVIDER=http mode=scrape url={url0} waitFor={page_options.get('waitFor')} proxy={proxy_mode}")
                     try:
-                        write_provider_event(authority_from_entry(entry) or authority_from_url(url0), url0, "scrape", "http", "fallback")
+                        write_provider_event(authority_from_entry(entry) or authority_from_url(url0), url0, "http", "fallback", page_options.get("waitFor", 0), proxy_mode, "")
                     except Exception:
                         pass
                 meta_url, meta_title, domain, published_at = extract_metadata(edict)
@@ -525,6 +724,18 @@ def run_ingest(config_path: str, dry_run: bool = False, limit_per_source: int = 
                         print(f"    markdown_snippet='{snippet}'")
                     print(f"    extracted url={meta_url} title={meta_title} domain={domain} published_at={published_at}")
 
+                # Optional PDF-only mode: skip non-PDF URLs early
+                if pdf_only:
+                    check_url = (meta_url or url0 or "").split("?")[0].lower()
+                    if not check_url.endswith(".pdf"):
+                        try:
+                            write_quality_drop(auth_lbl2 if 'auth_lbl2' in locals() else (authority_from_entry(entry) or authority_from_url(meta_url or url0 or "")), meta_url or (url0 or ""), "not_pdf", metric="0")
+                        except Exception:
+                            pass
+                        if INGEST_DEBUG or dry_run:
+                            print("    decision=SKIP reasons=['not_pdf']")
+                        continue
+
                 reasons = []
                 if not markdown:
                     reasons.append("no_markdown")
@@ -532,8 +743,25 @@ def run_ingest(config_path: str, dry_run: bool = False, limit_per_source: int = 
                     reasons.append(f"too_short(<{MIN_PAGE_CHARS})")
                 if not meta_url:
                     reasons.append("no_url")
+                # 404/Not Found filter
+                if contains_not_found(meta_title, markdown):
+                    reasons.append("not_found")
+                # Link farm filter
+                lf = is_link_farm_markdown(markdown)
+                if lf > 0.65:
+                    reasons.append(f"link_farm({lf:.2f})")
+                # Language filter: apply to English-expected authorities
+                auth_lbl2 = authority_from_entry(entry) or authority_from_url(meta_url)
+                if auth_lbl2 in ("ASEAN","MAS","IMDA","PDPC","SC","BNM","BOT","BSP","DICT","SBV","MIC"):
+                    ar = ascii_ratio(markdown)
+                    if ar < 0.60:
+                        reasons.append(f"non_english({ar:.2f})")
 
                 if reasons:
+                    try:
+                        write_quality_drop(auth_lbl2, meta_url or (url0 or ""), ";".join(reasons), metric=str(len(markdown)))
+                    except Exception:
+                        pass
                     if INGEST_DEBUG or dry_run:
                         print(f"    decision=SKIP reasons={reasons}")
                     continue
@@ -609,10 +837,10 @@ def run_ingest(config_path: str, dry_run: bool = False, limit_per_source: int = 
             csv_path = os.path.join(out_dir, "provider_usage_sources.csv")
             with open(csv_path, "w", encoding="utf-8", newline="") as f:
                 w = csv.writer(f)
-                w.writerow(["name", "url", "fc_crawl", "fc_scrape", "http_fallback"])
+                w.writerow(["authority", "url", "fc_crawl_count", "fc_scrape_count", "http_fallback_count"])
                 for s in per_source.values():
                     w.writerow([
-                        s.get("name"), s.get("url"),
+                        s.get("authority") or "", s.get("url"),
                         s.get("provider_fc_crawl", 0), s.get("provider_fc_scrape", 0), s.get("provider_http", 0)
                     ])
             print(f"Wrote provider usage CSV: {csv_path}")
@@ -629,6 +857,7 @@ if __name__ == "__main__":
     ap.add_argument("--dry-run", action="store_true", help="Fetch and parse only; do not write to DB")
     ap.add_argument("--limit-per-source", type=int, default=10, help="Max pages per source per run")
     ap.add_argument("--max-depth", type=int, default=1, help="Max crawl depth (hint to crawler; may be ignored)")
+    ap.add_argument("--pdf-only", action="store_true", help="Filter to PDF documents only (by URL extension)")
     args = ap.parse_args()
-    run_ingest(config_path=args.config, dry_run=args.dry_run, limit_per_source=args.limit_per_source, max_depth=args.max_depth)
+    run_ingest(config_path=args.config, dry_run=args.dry_run, limit_per_source=args.limit_per_source, max_depth=args.max_depth, pdf_only=args.pdf_only)
 
