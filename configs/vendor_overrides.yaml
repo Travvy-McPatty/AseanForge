@@ -1,0 +1,7 @@
+bnm:
+  unlock: false  # Set to true when vendor provides guidance
+  notes: "Awaiting Firecrawl response on 403 Forbidden with stealth proxy"
+kominfo:
+  unlock: false  # Set to true when vendor provides guidance
+  notes: "Awaiting Firecrawl response on zero-content yield with stealth proxy"
+

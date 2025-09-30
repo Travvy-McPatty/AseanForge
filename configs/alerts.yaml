@@ -1,0 +1,11 @@
+rules:
+  - name: MAS_Sanctions
+    match: ["sanction", "AML", "counter-terrorism", "anti-money laundering"]
+    authorities: ["MAS", "SC", "PDPC"]
+  - name: AI_Policy
+    match: ["artificial intelligence", "AI Act", "foundation model", "machine learning"]
+    authorities: ["ASEAN", "IMDA", "MIC", "DICT"]
+  - name: Data_Privacy
+    match: ["PDPA", "data protection", "privacy breach", "personal data"]
+    authorities: ["PDPC", "IMDA", "SC"]
+

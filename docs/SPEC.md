@@ -1,5 +1,14 @@
 ## ASEANForge Tier‑1 Ingestion SPEC
 
+## Open Issues
+
+### Pending Vendor Support (BNM & KOMINFO)
+- BNM (Malaysia): 403 Forbidden errors despite stealth proxy, 15000ms waitFor, selectors, maxDepth 2
+- KOMINFO (Indonesia): Zero content yield despite stealth proxy, 12000–15000ms waitFor, selectors, maxDepth 2
+- Vendor packet: [firecrawl_vendor_packet.md](../data/output/validation/latest/firecrawl_vendor_packet.md)
+- Status: Awaiting Firecrawl vendor response; unlock flags in `configs/vendor_overrides.yaml` set to `false`
+
+
 ### Scope
 - Tier‑1 authority ingestion only (15 authorities)
 - Firecrawl-first with HTTP fallback; global render=true with selective render=false overrides (PDPC, SC, OJK, BI)
