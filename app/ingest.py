@@ -306,6 +306,13 @@ def parse_published_at(html: str) -> Optional[dt.datetime]:
 # Per-authority Firecrawl proxy/wait policy and telemetry helper
 from typing import Optional, Tuple
 
+# Rate limit state tracker
+rate_limit_state = {
+    'consecutive_429s': 0,
+    'current_concurrency': int(os.getenv('MAX_CONCURRENCY', '2')),
+    'paused_until': None
+}
+
 def resolve_fc_proxy_and_wait_ms(authority: Optional[str]) -> Tuple[str, int]:
     auth = (authority or "").upper()
     wait_default = int(os.getenv("FIRECRAWL_WAIT_MS", "2000"))
@@ -388,10 +395,52 @@ def write_fc_error(domain: str, url: str, status: str, error_msg: str) -> None:
         pass
 
 
+def check_rate_limit_pause():
+    """Check if we need to pause due to rate limiting."""
+    global rate_limit_state
+
+    if rate_limit_state['paused_until'] and time.time() < rate_limit_state['paused_until']:
+        pause_duration = rate_limit_state['paused_until'] - time.time()
+        logging.warning(f"Rate limit pause active, sleeping {pause_duration:.1f}s...")
+        time.sleep(pause_duration)
+        rate_limit_state['paused_until'] = None
+
+
+def handle_rate_limit_error(error_msg: str):
+    """Handle rate limit error (429 or similar)."""
+    global rate_limit_state
+
+    rate_limit_state['consecutive_429s'] += 1
+
+    if rate_limit_state['consecutive_429s'] >= 3:
+        # Pause 60s and halve concurrency
+        rate_limit_state['paused_until'] = time.time() + 60
+        rate_limit_state['current_concurrency'] = max(1, rate_limit_state['current_concurrency'] // 2)
+        logging.warning(f"Rate limit hit {rate_limit_state['consecutive_429s']}x, pausing 60s, concurrency now {rate_limit_state['current_concurrency']}")
+
+        if rate_limit_state['consecutive_429s'] >= 6:
+            # Hard halt
+            os.makedirs("data/output/validation/latest", exist_ok=True)
+            with open('data/output/validation/latest/rate_limit_trip.txt', 'w') as f:
+                f.write(f"HALTED: {rate_limit_state['consecutive_429s']} consecutive 429s at {dt.datetime.now(dt.timezone.utc).isoformat()}\n")
+                f.write(f"Error: {error_msg}\n")
+            raise RuntimeError("Rate limit circuit breaker tripped after 6 consecutive 429s")
+
+
+def reset_rate_limit_counter():
+    """Reset rate limit counter on successful request."""
+    global rate_limit_state
+    rate_limit_state['consecutive_429s'] = 0
+
+
 # v2 helper: Firecrawl-first scrape with per-authority proxy/wait and telemetry
 def fc_fetch(app_obj, url: str, authority: Optional[str], proxy_mode: str, wait_ms: int) -> Optional[Dict]:
     if not app_obj:
         return None
+
+    # Check rate limit pause
+    check_rate_limit_pause()
+
     delay_ms = int(os.getenv("CRAWL_DELAY_MS", "1200"))
     page_opts = {
         "onlyMainContent": True,
@@ -404,6 +453,7 @@ def fc_fetch(app_obj, url: str, authority: Optional[str], proxy_mode: str, wait_
     try:
         # Preferred v2 signature
         doc = app_obj.scrape(url=url, formats=["markdown", "html", "text"], pageOptions=page_opts, parsers=["pdf"], proxy=proxy_mode, maxAge=172800000)  # type: ignore
+        reset_rate_limit_counter()  # Success, reset counter
     except TypeError:
         # Legacy fallbacks
         api_path = "legacy"
@@ -414,7 +464,11 @@ def fc_fetch(app_obj, url: str, authority: Optional[str], proxy_mode: str, wait_
                 doc = app_obj.scrape({"url": url, "formats": ["markdown", "html"]})  # type: ignore[arg-type]
             except Exception:
                 doc = None  # type: ignore
-    except Exception:
+    except Exception as e:
+        # Check for rate limit errors
+        error_str = str(e).lower()
+        if '429' in error_str or 'rate limit' in error_str or 'too many requests' in error_str:
+            handle_rate_limit_error(str(e))
         doc = None  # type: ignore
     html = ""; text = ""; title = ""
     if doc is not None:
@@ -577,7 +631,7 @@ def fc_crawl_links(app_obj, base_url: str, limit: int = 8, max_depth: int = 1, p
 
 # ---------------- Processing ----------------
 
-def process_article(oa: OpenAI, authority: str, url: str, fc_app, since_date: dt.date, dry_run: bool, rules: Dict, metrics: Dict):
+def process_article(oa: OpenAI, authority: str, url: str, fc_app, since_date: dt.date, dry_run: bool, rules: Dict, metrics: Dict, mode: str = "full"):
     html_page = ""; text = ""; title = ""; content_type = "html"
     proxy_mode, wait_ms = resolve_fc_proxy_and_wait_ms(authority)
     page = fc_fetch(fc_app, url, authority, proxy_mode, wait_ms)
@@ -666,7 +720,25 @@ def process_article(oa: OpenAI, authority: str, url: str, fc_app, since_date: dt
         return
 
     lang = detect_language(text)
-    summary_en = summarize(oa, text, lang)
+
+    # HARVEST mode: skip OpenAI calls (summarization and embeddings)
+    # ENRICH mode: only process if summary/embedding missing (handled separately)
+    # FULL mode: legacy behavior (summarize + embed inline)
+    summary_en = None
+    embedding = None
+
+    # Check environment variables for override (backward compatibility)
+    enable_summarization = os.getenv("ENABLE_SUMMARIZATION", "1") != "0"
+    enable_embeddings = os.getenv("ENABLE_EMBEDDINGS", "1") != "0"
+
+    if mode == "full" and enable_summarization and enable_embeddings:
+        # Legacy mode: call OpenAI inline (may hit quota limits)
+        summary_en = summarize(oa, text, lang)
+        embedding = embed_text(oa, summary_en or text[:1000])
+    elif mode == "harvest" or not enable_summarization or not enable_embeddings:
+        # Harvest mode: skip OpenAI calls entirely
+        logging.info(f"HARVEST mode: skipping summarization and embedding for {url}")
+    # ENRICH mode is handled by a separate batch processing function (not in this flow)
 
     policy_area, action_type = classify(authority, title or "", text, rules)
     if not policy_area: policy_area = "other"
@@ -674,8 +746,6 @@ def process_article(oa: OpenAI, authority: str, url: str, fc_app, since_date: dt
 
     event_hash = compute_event_hash(url, published_at, title or "")
     country = COUNTRY_BY_AUTH.get(authority, "SG")
-
-    embedding = embed_text(oa, summary_en or text[:1000])
 
     evt = {
         "event_hash": event_hash,
@@ -869,15 +939,162 @@ def run_aggressive_probe(authorities: List[str], pages_per_auth: int, seed: Dict
                         logf.write(f"http_error {url} {e}\n")
 
 
+def run_enrich_auto(args):
+    """
+    Run automatic batch enrichment pipeline.
+
+    Builds, submits, polls, and merges both embeddings and summaries batches.
+    """
+    from app.enrich_batch import builders, submit, poll, merge
+
+    # Determine budget
+    budget = args.budget or float(os.getenv("ENRICH_MAX_USD_FULL", "200"))
+
+    print(f"=== OpenAI Batch Enrichment Pipeline ===")
+    print(f"Budget: ${budget:.2f}")
+    print()
+
+    # Build embeddings requests
+    print("Step 1/6: Building embedding requests...")
+    emb_meta = builders.build_embedding_requests(
+        since_date=getattr(args, "since", None),
+        limit=None,
+        output_path="data/batch/embeddings.requests.jsonl"
+    )
+    print()
+
+    # Build summaries requests
+    print("Step 2/6: Building summary requests...")
+    sum_meta = builders.build_summary_requests(
+        since_date=getattr(args, "since", None),
+        limit=None,
+        output_path="data/batch/summaries.requests.jsonl"
+    )
+    print()
+
+    # Cost gate
+    total_cost = emb_meta.get("projected_cost_usd", 0) + sum_meta.get("projected_cost_usd", 0)
+    print(f"Total projected cost: ${total_cost:.4f}")
+
+    if total_cost > budget:
+        print(f"ERROR: Projected cost ${total_cost:.4f} exceeds budget ${budget:.2f}", file=sys.stderr)
+        print("Aborting enrichment pipeline.", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"✓ Cost check passed (${total_cost:.4f} <= ${budget:.2f})")
+    print()
+
+    # Submit embeddings batch
+    print("Step 3/6: Submitting embeddings batch...")
+    emb_batch_id = submit.submit_batch(emb_meta["file_path"], "embeddings")
+    print()
+
+    # Submit summaries batch
+    print("Step 4/6: Submitting summaries batch...")
+    sum_batch_id = submit.submit_batch(sum_meta["file_path"], "summaries")
+    print()
+
+    # Poll embeddings batch
+    print("Step 5/6: Polling embeddings batch...")
+    emb_result = poll.poll_batch(emb_batch_id, poll_interval_seconds=60, timeout_hours=26)
+
+    if emb_result["status"] != "completed":
+        print(f"ERROR: Embeddings batch did not complete: {emb_result['status']}", file=sys.stderr)
+        sys.exit(1)
+    print()
+
+    # Poll summaries batch
+    print("Polling summaries batch...")
+    sum_result = poll.poll_batch(sum_batch_id, poll_interval_seconds=60, timeout_hours=26)
+
+    if sum_result["status"] != "completed":
+        print(f"ERROR: Summaries batch did not complete: {sum_result['status']}", file=sys.stderr)
+        sys.exit(1)
+    print()
+
+    # Merge embeddings
+    print("Step 6/6: Merging embeddings to database...")
+    emb_stats = merge.merge_embeddings(emb_result["output_file_path"])
+    print()
+
+    # Merge summaries
+    print("Merging summaries to database...")
+    sum_stats = merge.merge_summaries(sum_result["output_file_path"])
+    print()
+
+    # Write enrichment report
+    os.makedirs("data/output/validation/latest", exist_ok=True)
+    report_path = "data/output/validation/latest/enrichment_report.md"
+
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write("# OpenAI Batch Enrichment Report\n\n")
+        f.write(f"**Timestamp**: {dt.datetime.now(dt.timezone.utc).isoformat()}\n\n")
+        f.write(f"**Budget**: ${budget:.2f}\n\n")
+        f.write(f"**Projected Cost**: ${total_cost:.4f}\n\n")
+
+        f.write("## Embeddings\n\n")
+        f.write(f"- **Batch ID**: {emb_batch_id}\n")
+        f.write(f"- **Model**: {emb_meta['model']}\n")
+        f.write(f"- **Requests**: {emb_meta['request_count']}\n")
+        f.write(f"- **Estimated Tokens**: {emb_meta['estimated_tokens']:,}\n")
+        f.write(f"- **Projected Cost**: ${emb_meta['projected_cost_usd']:.4f}\n")
+        f.write(f"- **Upserted**: {emb_stats['upserted_count']}\n")
+        f.write(f"- **Skipped**: {emb_stats['skipped_count']}\n")
+        f.write(f"- **Errors**: {emb_stats['error_count']}\n\n")
+
+        f.write("## Summaries\n\n")
+        f.write(f"- **Batch ID**: {sum_batch_id}\n")
+        f.write(f"- **Model**: {sum_meta['model']}\n")
+        f.write(f"- **Requests**: {sum_meta['request_count']}\n")
+        f.write(f"- **Estimated Input Tokens**: {sum_meta['estimated_input_tokens']:,}\n")
+        f.write(f"- **Estimated Output Tokens**: {sum_meta['estimated_output_tokens']:,}\n")
+        f.write(f"- **Projected Cost**: ${sum_meta['projected_cost_usd']:.4f}\n")
+        f.write(f"- **Upserted**: {sum_stats['upserted_count']}\n")
+        f.write(f"- **Skipped**: {sum_stats['skipped_count']}\n")
+        f.write(f"- **Errors**: {sum_stats['error_count']}\n\n")
+
+        f.write("## Summary\n\n")
+        f.write(f"- **Total Rows Updated**: {emb_stats['upserted_count'] + sum_stats['upserted_count']}\n")
+        f.write(f"- **Total Errors**: {emb_stats['error_count'] + sum_stats['error_count']}\n")
+
+    print(f"✓ Enrichment report written to: {report_path}")
+
+    # Update ROADMAP
+    try:
+        with open("docs/ROADMAP.md", "a", encoding="utf-8") as f:
+            f.write(f"\n### Batch Enrichment Run — {dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%d')}\n\n")
+            f.write(f"- **Date**: {dt.datetime.now(dt.timezone.utc).isoformat()}\n")
+            f.write(f"- **Embeddings**: {emb_stats['upserted_count']} rows updated (model: {emb_meta['model']})\n")
+            f.write(f"- **Summaries**: {sum_stats['upserted_count']} rows updated (model: {sum_meta['model']})\n")
+            f.write(f"- **Cost**: ${total_cost:.4f} (projected)\n")
+            f.write(f"- **Report**: {report_path}\n\n")
+
+        print(f"✓ ROADMAP updated")
+    except Exception as e:
+        print(f"WARNING: Failed to update ROADMAP: {e}")
+
+    print("\n=== Enrichment Pipeline Complete ===")
+
+
 def main():
     parser = argparse.ArgumentParser(description="ASEANForge Policy Tape Ingestion (MVP)")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_run = sub.add_parser("run", help="Run ingestion and write to DB")
-    p_run.add_argument("--since", type=str, required=True, help="YYYY-MM-DD")
+    p_run.add_argument("--since", type=str, required=False, help="YYYY-MM-DD (required for harvest/full modes)")
+    p_run.add_argument("--mode", type=str, choices=["harvest", "enrich", "full"], default="full",
+                      help="harvest=crawl/scrape only (no LLM); enrich=batch summarize/embed; full=both (legacy)")
+    p_run.add_argument("--auto", action="store_true", help="Auto-run full pipeline (for enrich mode)")
+    p_run.add_argument("--budget", type=float, help="Override cost budget in USD (for enrich mode)")
+    p_run.add_argument("--use-batch-scrape", action="store_true", help="Use Firecrawl batch scrape API when available")
+    p_run.add_argument("--batch-size", type=int, default=100, help="URLs per batch scrape (50-200)")
+    p_run.add_argument("--limit-per-source", type=int, default=100, help="Max URLs to process per source")
+    p_run.add_argument("--max-depth", type=int, default=2, help="Max crawl depth")
 
     p_dry = sub.add_parser("dry-run", help="Run ingestion without DB writes")
     p_dry.add_argument("--since", type=str, required=True, help="YYYY-MM-DD")
+    p_dry.add_argument("--mode", type=str, choices=["harvest", "enrich", "full"], default="full",
+                      help="harvest=crawl/scrape only (no LLM); enrich=batch summarize/embed; full=both (legacy)")
 
     p_probe = sub.add_parser("probe-aggressive", help="Aggressive Firecrawl troubleshooting probe")
     p_probe.add_argument("--authorities", type=str, default="IMDA,OJK,MAS,BI,ASEAN")
@@ -902,7 +1119,21 @@ def main():
         logging.info(json.dumps({"probe_done": True, "authorities": auths}))
         sys.exit(0)
 
-    # For run/dry-run flows, parse since
+    # Handle enrich mode
+    if args.cmd == "run" and getattr(args, "mode", "full") == "enrich":
+        if not getattr(args, "auto", False):
+            print("ERROR: enrich mode requires --auto flag", file=sys.stderr)
+            print("Usage: .venv/bin/python app/ingest.py run --mode enrich --auto", file=sys.stderr)
+            sys.exit(1)
+
+        run_enrich_auto(args)
+        sys.exit(0)
+
+    # For run/dry-run flows (harvest/full modes), parse since
+    if not args.since:
+        print("ERROR: --since is required for harvest/full modes", file=sys.stderr)
+        sys.exit(2)
+
     try:
         since = dt.date.fromisoformat(args.since)
     except Exception:
@@ -994,7 +1225,8 @@ def main():
             # process up to 5 links per source
             for url in links[:5]:
                 try:
-                    process_article(oa, label, url, fc_app, since, args.cmd == "dry-run", rules, metrics)
+                    mode = getattr(args, "mode", "full")  # Get mode from args, default to "full"
+                    process_article(oa, label, url, fc_app, since, args.cmd == "dry-run", rules, metrics, mode)
                 except Exception as e:
                     metrics["parse_failures"] += 1
                     logging.exception("Failed %s: %s", url, e)
