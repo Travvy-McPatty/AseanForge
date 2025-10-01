@@ -1,4 +1,12 @@
+#!/usr/bin/env python3
+"""
+⚠️ DEPRECATED: This script writes to the LEGACY schema (sources/pages/chunks).
+⚠️ Use app/ingest.py instead, which writes to the PRODUCTION schema (events/documents).
+⚠️ This file is kept for reference only and should NOT be used for production ingestion.
+"""
+
 import os
+import sys
 import argparse
 import json
 import time
@@ -6,6 +14,14 @@ import csv
 import re
 from urllib.request import urlopen, Request
 
+# Deprecation warning
+print("=" * 80, file=sys.stderr)
+print("⚠️  WARNING: This script is DEPRECATED and writes to the LEGACY schema!", file=sys.stderr)
+print("⚠️  Use 'app/ingest.py' instead for production ingestion.", file=sys.stderr)
+print("⚠️  This script writes to: sources/pages/chunks (LEGACY)", file=sys.stderr)
+print("⚠️  Production schema is: events/documents", file=sys.stderr)
+print("=" * 80, file=sys.stderr)
+sys.exit(1)  # Hard block execution
 
 from datetime import datetime
 from urllib.parse import urlparse

@@ -9,6 +9,7 @@ venv/
 
 # Project outputs
 /data/output/
+/data/batch/
 .env
 
 # Ignore per-app env
