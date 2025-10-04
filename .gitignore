@@ -25,3 +25,14 @@ app/.env
 app/.env
 data/output/
 deliverables/
+
+
+# Flagship v1.4 maintenance - validation artifacts
+# Ensure validation artifacts and large archives are ignored; allow snapshot_path.txt
+/data/output/validation/latest/**
+!/data/output/validation/latest/snapshot_path.txt
+# Explicit noisy provider logs
+/data/output/validation/latest/provider_events.csv
+/data/output/validation/latest/fc_errors.csv
+# Snapshot archives
+/deliverables/*snapshot*.zip
