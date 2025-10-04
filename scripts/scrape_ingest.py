@@ -76,8 +76,9 @@ def write_provider_event(authority: str, url: str, mode: str, provider: str, sta
                 "MAS" if "mas.gov.sg" in dom else (
                 "IMDA" if "imda.gov.sg" in dom else (
                 "OJK" if "ojk.go.id" in dom else (
-                "BI" if "bi.go.id" in dom else ""
-            ))))
+                "BI" if "bi.go.id" in dom else (
+                "KOMDIGI" if "komdigi.go.id" in dom else ""
+            )))))
             w.writerow([authority or auth, url, mode, provider, status, datetime.utcnow().isoformat()])
     except Exception:
         pass
