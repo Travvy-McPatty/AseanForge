@@ -34,7 +34,7 @@ from typing import Dict, List, Optional, Tuple
 # dotenv
 try:
     from dotenv import load_dotenv  # type: ignore
-    load_dotenv()
+    load_dotenv("app/.env")
 except Exception:
     pass
 
@@ -61,7 +61,7 @@ TZ = os.getenv("TIMEZONE", "Asia/Jakarta")
 
 COUNTRY_BY_AUTH = {
     "MAS": "SG", "IMDA": "SG", "PDPC": "SG",
-    "BI": "ID", "OJK": "ID", "KOMINFO": "ID",
+    "BI": "ID", "OJK": "ID", "KOMINFO": "ID", "KOMDIGI": "ID",
     "BOT": "TH",
     "BNM": "MY", "SC": "MY", "MCMC": "MY",
     "BSP": "PH", "DICT": "PH",
@@ -188,16 +188,35 @@ def strip_html(html: str) -> str:
 
 
 def discover_links(base_url: str, html: str, limit: int = 8) -> List[str]:
+    # Sitemap XML support
+    if base_url.lower().endswith(".xml") or ("<urlset" in (html or "")):
+        locs = re.findall(r"<loc>\s*([^<\s]+)\s*</loc>", html or "", flags=re.I)
+        uniq = []
+        seen = set()
+        for u in locs:
+            if u.startswith("http") and u not in seen:
+                seen.add(u); uniq.append(u)
+                if len(uniq) >= limit:
+                    break
+        return uniq
     patt = re.compile(r'<a[^>]+href=["\']([^"\']+)["\']', re.I)
-    raw = patt.findall(html)
+    raw = patt.findall(html or "")
     urls: List[str] = []
+    base_dom = urllib.parse.urlsplit(base_url).netloc.lower()
     for href in raw:
         if href.startswith("#") or href.lower().startswith("javascript:"):
             continue
         full = urllib.parse.urljoin(base_url, href)
         if not full.startswith("http"): continue
-        if re.search(r"news|press|release|media|publication|policy|guideline|notice|consult", full, re.I):
-            urls.append(full)
+        dom = urllib.parse.urlsplit(full).netloc.lower()
+        if base_dom and dom != base_dom:
+            continue
+        if "komdigi.go.id" in base_dom:
+            if ("/produk_hukum/" in full) or ("/berita" in full):
+                urls.append(full)
+        else:
+            if re.search(r"news|press|release|media|publication|policy|guideline|notice|consult", full, re.I):
+                urls.append(full)
         if len(urls) >= limit:
             break
     # de-dup by preserving order
@@ -320,6 +339,7 @@ def resolve_fc_proxy_and_wait_ms(authority: Optional[str]) -> Tuple[str, int]:
         return ("stealth", 12000)
     if auth in ("ASEAN", "OJK", "MCMC", "DICT"):
         return ("stealth", 5000)
+    # KOMDIGI defaults to auto; escalate via retry if needed
     return ("auto", wait_default)
 
 
@@ -413,18 +433,12 @@ def handle_rate_limit_error(error_msg: str):
     rate_limit_state['consecutive_429s'] += 1
 
     if rate_limit_state['consecutive_429s'] >= 3:
-        # Pause 60s and halve concurrency
-        rate_limit_state['paused_until'] = time.time() + 60
-        rate_limit_state['current_concurrency'] = max(1, rate_limit_state['current_concurrency'] // 2)
-        logging.warning(f"Rate limit hit {rate_limit_state['consecutive_429s']}x, pausing 60s, concurrency now {rate_limit_state['current_concurrency']}")
-
-        if rate_limit_state['consecutive_429s'] >= 6:
-            # Hard halt
-            os.makedirs("data/output/validation/latest", exist_ok=True)
-            with open('data/output/validation/latest/rate_limit_trip.txt', 'w') as f:
-                f.write(f"HALTED: {rate_limit_state['consecutive_429s']} consecutive 429s at {dt.datetime.now(dt.timezone.utc).isoformat()}\n")
-                f.write(f"Error: {error_msg}\n")
-            raise RuntimeError("Rate limit circuit breaker tripped after 6 consecutive 429s")
+        # Hard halt after 3 consecutive 429s (per guardrail)
+        os.makedirs("data/output/validation/latest", exist_ok=True)
+        with open('data/output/validation/latest/rate_limit_trip.txt', 'w') as f:
+            f.write(f"HALTED: {rate_limit_state['consecutive_429s']} consecutive 429s at {dt.datetime.now(dt.timezone.utc).isoformat()}\n")
+            f.write(f"Error: {error_msg}\n")
+        raise RuntimeError("Rate limit circuit breaker tripped after 3 consecutive 429s")
 
 
 def reset_rate_limit_counter():
@@ -565,7 +579,16 @@ def fc_crawl_links(app_obj, base_url: str, limit: int = 8, max_depth: int = 1, p
     api_path = "v2"
     # Try v2 first; fall back to legacy signatures if needed
     try:
-        docs = app_obj.crawl(url=base_url, limit=limit, pageOptions={"waitFor": int(wait_ms), "timeout": 60000, "includeHtml": True, "parsePDF": True, "onlyMainContent": True}, proxy=proxy_mode, poll_interval=1, timeout=120, maxAge=172800000)  # type: ignore
+        docs = app_obj.crawl(
+            url=base_url,
+            limit=limit,
+            pageOptions={"waitFor": int(wait_ms), "timeout": 60000, "includeHtml": True, "parsePDF": True, "onlyMainContent": True},
+            crawlerOptions={"maxDepth": int(max_depth)},
+            proxy=proxy_mode,
+            poll_interval=1,
+            timeout=120,
+            maxAge=172800000
+        )  # type: ignore
     except TypeError:
         api_path = "legacy"
         try:
@@ -1089,6 +1112,7 @@ def main():
     p_run.add_argument("--use-batch-scrape", action="store_true", help="Use Firecrawl batch scrape API when available")
     p_run.add_argument("--batch-size", type=int, default=100, help="URLs per batch scrape (50-200)")
     p_run.add_argument("--limit-per-source", type=int, default=100, help="Max URLs to process per source")
+    p_run.add_argument("--authorities", type=str, help="Comma-separated authorities to include (e.g., KOMDIGI)")
     p_run.add_argument("--max-depth", type=int, default=2, help="Max crawl depth")
 
     p_dry = sub.add_parser("dry-run", help="Run ingestion without DB writes")
@@ -1159,9 +1183,14 @@ def main():
 
     feeds_override = load_feeds_override()
 
+    # Optional authority filter
+    auth_filter = set(a.strip().upper() for a in ((getattr(args, "authorities", "") or "").split(",")) if a.strip())
+
     for entry in start_urls:
         base = entry.get("url"); label = entry.get("label")
         if not base: continue
+        if auth_filter and (label or "").upper() not in auth_filter:
+            continue
         try:
             # Feed-first for enabled authorities
             used_feed = False
@@ -1188,8 +1217,9 @@ def main():
             if fc_app:
                 try:
                     proxy_mode, wait_ms = resolve_fc_proxy_and_wait_ms(label)
-                    max_d = 2 if (label or "").upper() in ("BNM","KOMINFO") else 1
-                    links = fc_crawl_links(fc_app, base, limit=8, max_depth=max_d, proxy_mode=proxy_mode, wait_ms=int(wait_ms), authority=label)
+                    max_d = entry.get("maxDepth") or (2 if (label or "").upper() in ("BNM","KOMINFO","KOMDIGI") else 1)
+                    crawl_limit = int(getattr(args, "limit_per_source", 100) or 100)
+                    links = fc_crawl_links(fc_app, base, limit=crawl_limit, max_depth=max_d, proxy_mode=proxy_mode, wait_ms=int(wait_ms), authority=label)
                     if links:
                         logging.info(f"FETCH_PROVIDER=firecrawl mode=crawl url={base} waitFor={int(wait_ms)} proxy={proxy_mode}")
                         metrics["prov_fc_landing"] += 1
@@ -1220,10 +1250,10 @@ def main():
                     data, ct = http_get(base)
                     if ct.startswith("text"):
                         html = data.decode("utf-8", errors="ignore")
-                links = discover_links(base, html or "", limit=8)
+                links = discover_links(base, html or "", limit=int(getattr(args, "limit_per_source", 100) or 100))
 
-            # process up to 5 links per source
-            for url in links[:5]:
+            # process up to N links per source
+            for url in links[:int(getattr(args, "limit_per_source", 100) or 100)]:
                 try:
                     mode = getattr(args, "mode", "full")  # Get mode from args, default to "full"
                     process_article(oa, label, url, fc_app, since, args.cmd == "dry-run", rules, metrics, mode)

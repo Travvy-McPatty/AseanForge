@@ -1,0 +1,182 @@
+[
+  {
+    "id": "komdigi_1",
+    "question": "produk hukum KOMDIGI",
+    "expected_authority": "KOMDIGI",
+    "expected_topics": []
+  },
+  {
+    "id": "komdigi_2",
+    "question": "keputusan presiden republik indonesia nomor 91 tahun 1999",
+    "expected_authority": "KOMDIGI",
+    "expected_topics": []
+  },
+  {
+    "id": "komdigi_3",
+    "question": "keputusan presiden republik indonesia nomor 91 tahun 1999",
+    "expected_authority": "KOMDIGI",
+    "expected_topics": []
+  },
+  {
+    "id": "komdigi_4",
+    "question": "produk hukum KOMDIGI",
+    "expected_authority": "KOMDIGI",
+    "expected_topics": []
+  },
+  {
+    "id": "komdigi_5",
+    "question": "undangundang nomor 36 tahun 1999",
+    "expected_authority": "KOMDIGI",
+    "expected_topics": []
+  },
+  {
+    "id": "komdigi_6",
+    "question": "undangundang nomor 36 tahun 1999",
+    "expected_authority": "KOMDIGI",
+    "expected_topics": []
+  },
+  {
+    "id": "komdigi_7",
+    "question": "produk hukum KOMDIGI",
+    "expected_authority": "KOMDIGI",
+    "expected_topics": []
+  },
+  {
+    "id": "komdigi_8",
+    "question": "produk hukum KOMDIGI",
+    "expected_authority": "KOMDIGI",
+    "expected_topics": []
+  },
+  {
+    "id": "mas_1",
+    "question": "MAS: Document",
+    "expected_authority": "MAS",
+    "expected_topics": []
+  },
+  {
+    "id": "mas_2",
+    "question": "MAS: Document",
+    "expected_authority": "MAS",
+    "expected_topics": []
+  },
+  {
+    "id": "sc_1",
+    "question": "SC: Document",
+    "expected_authority": "SC",
+    "expected_topics": []
+  },
+  {
+    "id": "sc_2",
+    "question": "SC: Document",
+    "expected_authority": "SC",
+    "expected_topics": []
+  },
+  {
+    "id": "pdpc_1",
+    "question": "PDPC: Document",
+    "expected_authority": "PDPC",
+    "expected_topics": []
+  },
+  {
+    "id": "pdpc_2",
+    "question": "PDPC: Document",
+    "expected_authority": "PDPC",
+    "expected_topics": []
+  },
+  {
+    "id": "mic_1",
+    "question": "MIC: Document",
+    "expected_authority": "MIC",
+    "expected_topics": []
+  },
+  {
+    "id": "mic_2",
+    "question": "MIC: Document",
+    "expected_authority": "MIC",
+    "expected_topics": []
+  },
+  {
+    "id": "bi_1",
+    "question": "BI: Document",
+    "expected_authority": "BI",
+    "expected_topics": []
+  },
+  {
+    "id": "bi_2",
+    "question": "BI: Document",
+    "expected_authority": "BI",
+    "expected_topics": []
+  },
+  {
+    "id": "ojk_1",
+    "question": "Consultative Papers",
+    "expected_authority": "OJK",
+    "expected_topics": []
+  },
+  {
+    "id": "ojk_2",
+    "question": "Consultative Papers",
+    "expected_authority": "OJK",
+    "expected_topics": []
+  },
+  {
+    "id": "imda_1",
+    "question": "IMDA: Document",
+    "expected_authority": "IMDA",
+    "expected_topics": []
+  },
+  {
+    "id": "imda_2",
+    "question": "IMDA: Document",
+    "expected_authority": "IMDA",
+    "expected_topics": []
+  },
+  {
+    "id": "sbv_1",
+    "question": "SBV: Document",
+    "expected_authority": "SBV",
+    "expected_topics": []
+  },
+  {
+    "id": "sbv_2",
+    "question": "SBV: Document",
+    "expected_authority": "SBV",
+    "expected_topics": []
+  },
+  {
+    "id": "bsp_1",
+    "question": "BSP: Document",
+    "expected_authority": "BSP",
+    "expected_topics": []
+  },
+  {
+    "id": "bsp_2",
+    "question": "BSP: Document",
+    "expected_authority": "BSP",
+    "expected_topics": []
+  },
+  {
+    "id": "bot_1",
+    "question": "BOT: Document",
+    "expected_authority": "BOT",
+    "expected_topics": []
+  },
+  {
+    "id": "bot_2",
+    "question": "BOT: Document",
+    "expected_authority": "BOT",
+    "expected_topics": []
+  },
+  {
+    "id": "asean_1",
+    "question": "ASEAN: Document",
+    "expected_authority": "ASEAN",
+    "expected_topics": []
+  },
+  {
+    "id": "asean_2",
+    "question": "ASEAN: Document",
+    "expected_authority": "ASEAN",
+    "expected_topics": []
+  }
+]
