@@ -1,0 +1,20 @@
+# Controlled vocabularies for Deal-Matching MVP
+# Note: Keep keys stable for importer validation; include common synonyms.
+
+technologies: [solar, wind, hydro, waste-to-energy, WtE, biomass, geothermal, battery, battery-storage, grid, mining, industrial_decarbonization]
+
+stages: [concept, feasibility, development, permits, construction, operational, term-sheet, financial-close]
+
+instruments: [equity, senior-debt, subordinated-debt, mezzanine, mezz, debt, guarantee, grant, insurance]
+
+offtake_status: [none, LOI, MOU, PPA-signed]
+
+esia_status: [none, scoping, draft, approved, final]
+
+ifc_categories: [A, B, C]
+
+themes: [climate-finance, gender-lens, China-plus-one, china_plus_one, energy-access, rural_access, grid_resilience, circular-economy, industrial_decarbonization]
+
+regions: [ASEAN, South Asia, East Asia, IDN, VNM, PHL, THA, MYS, SGP, KHM, LAO, MMR, BRN]
+
+countries_iso3: [IDN, THA, VNM, PHL, MYS, SGP, KHM, LAO, MMR, BRN]
