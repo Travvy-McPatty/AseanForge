@@ -1,0 +1,4 @@
+sponsor_name,country_iso3,lat,lng,technology,capacity_value,capacity_unit,expected_cod,stage,capex_usd,ticket_open_usd,instrument_needed,currency,tenor_years,target_irr,offtake_status,permits_status,land_rights_status,grid_interconnect_status,esia_status,ifc_category,community_risk,pri_possible,eca_possible,sovereign_support,policy_alignment,china_plus_one_fit,nda_signed,data_room_url,free_text
+PT Nusantara Energy,IDN,-6.2,106.8,solar,50,MW,2027-06-30,feasibility,55000000,15000000,debt,USD,10,12,draft,draft,draft,none,scoping,B,med,true,true,false,"{RUPTL,grid_resilience}",true,false,https://example.com/dataroom,
+Thai Renew Co.,THA,13.7,100.5,wind,100,MW,2026-12-31,permits,120000000,30000000,mezz,THB,8,15,LOI,granted,secured,draft,final,B,low,true,false,true,"{grid_resilience}",false,true,https://example.com/wind-room,
+

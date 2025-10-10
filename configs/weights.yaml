@@ -1,0 +1,9 @@
+# Weights for soft scoring components (sum to 1.0)
+# Components: mandate, readiness, commercials, risk, impact, strategic
+mandate: 0.25
+readiness: 0.20
+commercials: 0.20
+risk: 0.15
+impact: 0.10
+strategic: 0.10
+

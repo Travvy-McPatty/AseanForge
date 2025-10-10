@@ -1,0 +1,5 @@
+name,type,mandate_regions,mandate_technologies,use_of_proceeds_allowed,instruments_offered,min_ticket_usd,max_ticket_usd,min_tenor_years,max_tenor_years,target_irr_range,risk_appetite,ifc_category_allowed,coal_exclusion,other_exclusions,lending_currencies,local_currency_pref,requires_site_visit,requires_ifc_ps,avg_decision_time_days,themes,notes,free_text
+Asian Development Bank,DFI,"{IDN,THA,VNM,PHL,MYS,SGP,KHM,LAO,MMR,BRN}","{solar,wind,hydro,battery,grid}","{capex,refi}","{debt,guarantee}",5000000,50000000,5,20,,low,"{A,B}",true,"{coal}","{USD,IDR,THB,VND,PHP,MYR,SGD}",true,false,true,120,"{grid_resilience,industrial_decarbonization}",,
+IFC,DFI,"{IDN,THA,VNM,PHL,MYS,SGP,KHM,LAO,MMR,BRN}","{solar,wind,hydro,biomass,WtE,geothermal,battery,grid}","{capex,refi}","{equity,debt,mezz}",10000000,200000000,5,15,,med,"{A,B,C}",true,,"{USD,IDR,THB,VND,PHP,MYR,SGD}",true,true,true,150,"{industrial_decarbonization}",,
+JBIC,ECA,"{IDN,THA,VNM,PHL,MYS}","{solar,wind,grid,mining}","{capex}","{debt,guarantee,insurance}",10000000,150000000,5,18,,med,"{A,B}",true,,"{USD,JPY}",false,false,false,180,"{grid_resilience}",,
+
